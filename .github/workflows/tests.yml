@@ -1,0 +1,40 @@
+name: tests
+
+on:
+  push:
+    paths-ignore:
+      - "docs/**"
+      - "**.md"
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  stub-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PYTHONIOENCODING: utf-8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - name: Install locked dependencies
+        run: uv sync --locked
+      - name: Writing and Web control flow
+        run: uv run python _test_hardening.py
+      - name: Framework fallback control flow
+        env:
+          FORCE_STUB_FASTAPI: "1"
+        run: uv run python _test_hardening.py
+      - name: Fact checker control flow
+        run: uv run python _test_hardening_fc.py
+      - name: Evaluation tooling and public sample
+        run: uv run python _test_eval.py

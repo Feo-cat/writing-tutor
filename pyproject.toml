@@ -1,0 +1,14 @@
+[project]
+name = "writing-tutor"
+version = "0.1.0"
+description = "本地 Web 写作导师：先学懂，再用自己的话写作"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "ddgs>=9.14.4",
+    "fastapi>=0.138.0",
+    "httpx>=0.28.1",
+    "openai>=2.44.0",
+    "python-dotenv>=1.2.2",
+    "uvicorn[standard]>=0.49.0",
+]

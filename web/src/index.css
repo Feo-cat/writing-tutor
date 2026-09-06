@@ -1,0 +1,597 @@
+/* index.css —— 全局观感。
+   配色 / 字体直接取自作者博客（Anthropic 暖陶土风）：暖纸背景 + 衬线标题（中文走 Songti
+   兜底）+ 陶土主色 + 去卡片化细线分隔。改主色只动 --accent 一处。 */
+
+:root {
+  --accent: #c15f3c;
+  --accent-deep: #a8472a;
+  --ink: #262321;
+  --ink-soft: #5c554d;
+  --ink-muted: #8a8178;
+  --paper: #f0eee6;
+  --paper-card: #faf9f4;
+  --line: rgba(38, 35, 33, 0.14);
+  --serif: "Iowan Old Style", "Charter", Georgia, "Songti SC", "Source Han Serif SC", serif;
+  --sans: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+html, body, #root { height: 100%; }
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 16px;
+  line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3, h4 {
+  font-family: var(--serif);
+  font-weight: 500;
+  letter-spacing: 0;
+  color: var(--ink);
+  line-height: 1.3;
+}
+
+a { color: var(--accent-deep); }
+
+/* ── 版心 ─────────────────────────────────────────────────────────────── */
+.app {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 2.2rem 1.2rem 8rem;
+  min-height: 100%;
+}
+
+/* ── 顶栏：标识 + 假数据开关 ──────────────────────────────────────────── */
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1.2rem;
+}
+.topbar .brand { font-family: var(--serif); font-size: 1.05rem; color: var(--ink-soft); }
+.stub-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.8rem;
+  color: var(--ink-muted);
+  cursor: pointer;
+  user-select: none;
+}
+.stub-toggle .dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: #6b8f71; /* 绿点=免费 */
+}
+.stub-toggle.real .dot { background: var(--accent); }
+
+/* ── 落地页 ───────────────────────────────────────────────────────────── */
+.hero { text-align: center; padding-top: 4vh; }
+.hero-img {
+  width: 100%;
+  max-width: 460px;
+  border-radius: 16px;
+  display: block;
+  margin: 0 auto 1.6rem;
+}
+.hero-title { font-size: 2.7rem; margin: 0 0 0.5rem; }
+.hero-sub {
+  color: var(--ink-muted);
+  font-size: 1.04rem;
+  max-width: 30rem;
+  margin: 0 auto 2rem;
+}
+.topic-form { display: flex; gap: 0.6rem; max-width: 32rem; margin: 0 auto; }
+.topic-input {
+  flex: 1;
+  font-family: var(--sans);
+  font-size: 1rem;
+  color: var(--ink);
+  background: var(--paper-card);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0.7rem 1.1rem;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.topic-input:focus { border-color: var(--accent); }
+
+/* ── 通用按钮（胶囊）──────────────────────────────────────────────────── */
+.btn {
+  font-family: var(--sans);
+  font-size: 0.96rem;
+  font-weight: 600;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0.62rem 1.25rem;
+  background: var(--paper-card);
+  color: var(--ink);
+  cursor: pointer;
+  transition: transform 0.08s, background 0.15s, opacity 0.15s;
+}
+.btn:hover { transform: translateY(-1px); }
+.btn:active { transform: translateY(0); }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
+.btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.btn-primary:hover { background: var(--accent-deep); }
+
+/* ── 进度条（节进度）─────────────────────────────────────────────────── */
+.progress { margin-bottom: 1.4rem; }
+.progress-label {
+  font-size: 0.82rem;
+  color: var(--ink-muted);
+  margin-bottom: 0.4rem;
+}
+.progress-track {
+  height: 4px;
+  background: var(--line);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.progress-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 999px;
+  transition: width 0.5s ease;
+}
+
+/* ── 对话 ─────────────────────────────────────────────────────────────── */
+.transcript { display: flex; flex-direction: column; gap: 0.2rem; }
+
+.section-divider {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  margin: 1.4rem 0 0.6rem;
+  color: var(--ink-muted);
+  font-family: var(--serif);
+  font-size: 0.92rem;
+}
+.section-divider::before,
+.section-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
+
+.msg-tutor { display: flex; gap: 0.7rem; margin: 0.7rem 0; }
+.avatar {
+  flex: none;
+  width: 34px; height: 34px;
+  border-radius: 50%;
+  background: var(--paper-card);
+  border: 1px solid var(--line);
+  display: grid;
+  place-items: center;
+  font-size: 1.05rem;
+}
+.tutor-body { flex: 1; min-width: 0; }
+.lesson { line-height: 1.78; }
+.lesson p { margin: 0.2rem 0 0.6rem; }
+
+/* 「问」：博客引用块风格（左竖线 + 淡橙底 + 衬线）*/
+.question {
+  border-left: 2px solid var(--accent);
+  background: rgba(193, 95, 60, 0.065);
+  padding: 0.5rem 0.9rem;
+  margin-top: 0.5rem;
+  color: var(--ink-soft);
+  font-family: var(--serif);
+  border-radius: 0 6px 6px 0;
+}
+
+/* 你的话：靠右暖纸气泡 */
+.msg-user {
+  align-self: flex-end;
+  max-width: 80%;
+  background: var(--paper-card);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 0.55rem 0.9rem;
+  margin: 0.4rem 0 0.9rem;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* 打字光标 */
+.caret {
+  display: inline-block;
+  width: 2px; height: 1.05em;
+  background: var(--accent);
+  margin-left: 1px;
+  vertical-align: -0.15em;
+  animation: blink 1s steps(1) infinite;
+}
+@keyframes blink { 50% { opacity: 0; } }
+
+/* 阶段状态行（导师备课中…）*/
+.phase-line {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--ink-muted);
+  font-size: 0.92rem;
+  margin: 0.6rem 0 0.6rem 2.4rem;
+}
+.phase-line .pulse {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--accent);
+  animation: pulse 1.1s ease-in-out infinite;
+}
+@keyframes pulse { 0%, 100% { opacity: 0.25; } 50% { opacity: 1; } }
+
+/* ── 底部输入条（钉在视口底）──────────────────────────────────────────── */
+.composer {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  background: linear-gradient(to top, var(--paper) 72%, transparent);
+  padding: 1rem 1.2rem 1.4rem;
+}
+.composer-inner {
+  max-width: 720px;
+  margin: 0 auto;
+  display: flex;
+  gap: 0.6rem;
+  align-items: flex-end;
+}
+.composer textarea {
+  flex: 1;
+  resize: none;
+  font-family: var(--sans);
+  font-size: 1rem;
+  line-height: 1.5;
+  color: var(--ink);
+  background: var(--paper-card);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 0.65rem 0.95rem;
+  outline: none;
+  max-height: 40vh;
+  transition: border-color 0.15s;
+}
+.composer textarea:focus { border-color: var(--accent); }
+
+/* ── 成稿（阅读页）────────────────────────────────────────────────────── */
+.paper { padding-top: 0.5rem; }
+.eyebrow {
+  color: var(--ink-muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin: 1.6rem 0 0.4rem;
+}
+.doc h1 { font-size: 2.1rem; margin: 0.2rem 0 1rem; }
+.doc h2 { font-size: 1.4rem; margin: 1.6rem 0 0.6rem; }
+.doc h3 { font-size: 1.15rem; margin: 1.2rem 0 0.5rem; }
+.doc p { margin: 0.6rem 0; }
+.doc ul { padding-left: 1.2rem; }
+.doc blockquote {
+  border-left: 2px solid var(--accent);
+  background: rgba(193, 95, 60, 0.06);
+  margin: 0.6rem 0;
+  padding: 0.4rem 0.9rem;
+  color: var(--ink-soft);
+}
+.divider { border: none; border-top: 1px solid var(--line); margin: 2rem 0; }
+.review { color: var(--ink-soft); }
+.review p { margin: 0.35rem 0; }
+
+.done-actions { display: flex; gap: 0.7rem; margin-top: 2rem; }
+.done-mark { text-align: center; margin: 0.5rem 0 1.5rem; }
+
+.err {
+  color: var(--accent-deep);
+  background: rgba(193, 95, 60, 0.08);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0.7rem 1rem;
+  margin: 1rem 0;
+}
+
+/* 提纲确认、档案、调用记录、提示与交付区域。 */
+
+/* ── 提纲确认闸：整条链的地基，这里是最便宜的干预点 ───────────────────────── */
+.outline-gate {
+  max-width: 34rem;
+  margin: 0 auto 1.6rem;
+  padding: 1.15rem 1.3rem;
+  background: var(--paper-card);
+  border: 1px solid var(--line);
+  border-left: 2px solid var(--accent);
+  border-radius: 12px;
+}
+.outline-gate-hd {
+  font-size: 0.84rem;
+  color: var(--ink-muted);
+  margin-bottom: 0.9rem;
+}
+.outline-list { margin: 0; padding-left: 1.25rem; }
+.outline-list li { margin-bottom: 0.55rem; line-height: 1.6; }
+.outline-list b { font-family: var(--serif); font-size: 1.02rem; font-weight: 600; }
+.outline-points {
+  display: block;
+  font-size: 0.82rem;
+  color: var(--ink-muted);
+  margin-top: 0.15rem;
+}
+.outline-note {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  font-family: var(--sans);
+  font-size: 0.86rem;
+  line-height: 1.65;
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0.6rem 0.75rem;
+  margin: 1rem 0 0.85rem;
+  resize: vertical;
+}
+.outline-note:focus { outline: none; border-color: var(--accent); }
+.outline-note::placeholder { color: var(--ink-muted); }
+.outline-note:disabled { opacity: 0.55; }
+.outline-actions { display: flex; gap: 0.6rem; }
+.outline-hint {
+  margin-top: 0.9rem;
+  font-size: 0.78rem;
+  line-height: 1.65;
+  color: var(--ink-muted);
+}
+.outline-peek { margin-bottom: 1.2rem; font-size: 0.84rem; color: var(--ink-muted); }
+
+/* ── 首屏那个入口：第一屏就该有东西可看，而不是一个空输入框 ───────────────── */
+.archive-entry {
+  display: block;
+  margin: 2.4rem auto 0;
+  padding: 0.55rem 1.1rem;
+  background: none;
+  border: none;
+  border-bottom: 1px solid transparent;
+  font-family: var(--sans);
+  font-size: 0.92rem;
+  color: var(--ink-soft);
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+.archive-entry:hover { color: var(--accent); border-bottom-color: var(--accent); }
+.archive-entry-sub {
+  display: block;
+  margin-top: 0.15rem;
+  font-size: 0.76rem;
+  color: var(--ink-muted);
+}
+
+/* ── 档案页 ───────────────────────────────────────────────────────────── */
+.arc-head {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1.5rem 0 0.4rem;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 1.6rem;
+}
+.arc-head-t {
+  font-family: var(--serif);
+  font-size: 1.25rem;
+  line-height: 1.4;
+  color: var(--ink);
+  flex: 1;
+  min-width: 0;
+}
+.btn-quiet {
+  flex: none;
+  font-family: var(--sans);
+  font-size: 0.84rem;
+  padding: 0.35rem 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: none;
+  color: var(--ink-soft);
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+.btn-quiet:hover { border-color: var(--accent); color: var(--ink); }
+
+.arc-lede {
+  max-width: 34rem;
+  margin: 0 0 1.8rem;
+  font-size: 0.92rem;
+  line-height: 1.85;
+  color: var(--ink-muted);
+}
+.arc-lede b { color: var(--ink-soft); font-weight: 600; }
+
+.arc-list { display: flex; flex-direction: column; gap: 0.5rem; }
+.arc-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.55rem;
+  width: 100%;
+  text-align: left;
+  padding: 1rem 1.15rem;
+  background: var(--paper-card);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  transition: border-color 0.15s, transform 0.12s;
+}
+.arc-item:hover { border-color: var(--accent); transform: translateY(-1px); }
+.arc-title {
+  font-family: var(--serif);
+  font-size: 1.06rem;
+  line-height: 1.5;
+  color: var(--ink);
+}
+.arc-meta { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+/* 「有没有」和「有多大」都摆出来：只有初稿的和五样齐全的，一眼分得开。
+   缺的那样用淡出表示——不用删除线，那读起来像「被删掉了」，而它是「从来没有」。 */
+.arc-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.28rem;
+  font-family: var(--sans);
+  font-size: 0.72rem;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--paper);
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+.arc-chip b { font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums; }
+.arc-chip.none { opacity: 0.32; border-style: dashed; }
+
+.arc-tabs { display: flex; gap: 0.4rem; flex-wrap: wrap; margin: 1.4rem 0 0; }
+.arc-tab {
+  font-family: var(--sans);
+  font-size: 0.84rem;
+  padding: 0.42rem 0.95rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: none;
+  color: var(--ink-soft);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+.arc-tab:hover:not(:disabled) { border-color: var(--accent); color: var(--ink); }
+.arc-tab.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.arc-tab:disabled { opacity: 0.3; cursor: not-allowed; }
+
+.arc-doc { margin-top: 1.6rem; }
+.arc-raw {
+  margin: 1.6rem 0 0;
+  padding: 1.2rem 1.35rem;
+  max-height: 32rem;
+  overflow: auto;
+  background: var(--paper-card);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  font-size: 0.8rem;
+  line-height: 1.85;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--ink-soft);
+}
+.arc-empty, .arc-err {
+  margin-top: 1.6rem;
+  font-size: 0.86rem;
+  color: var(--ink-muted);
+}
+
+/* ── 制作凭据：一个只用宿主模型的聊天会话，在自建网关上留不下任何一行 ────── */
+.receipt {
+  padding: 1rem 1.2rem;
+  background: var(--paper-card);
+  border: 1px solid var(--line);
+  border-left: 2px solid var(--accent);
+  border-radius: 12px;
+  font-family: var(--sans);
+  font-size: 0.86rem;
+  line-height: 1.85;
+}
+.receipt-hd {
+  font-size: 0.76rem;
+  letter-spacing: 0.06em;
+  color: var(--ink-muted);
+  margin-bottom: 0.35rem;
+}
+.receipt-hd code {
+  font-size: 0.76rem;
+  color: var(--accent-deep);
+  background: var(--paper);
+  padding: 0.05rem 0.4rem;
+  border-radius: 5px;
+}
+.receipt-line { color: var(--ink-soft); }
+.receipt-line b { color: var(--ink); font-variant-numeric: tabular-nums; }
+.receipt-line.dim { color: var(--ink-muted); font-size: 0.8rem; line-height: 1.75; }
+
+/* ── 守卫条：让「它坏过、又自己恢复了」看得见。
+      用强调色不用红色——守卫触发说明它在正常工作，不是出事了。 ───────────── */
+.guards {
+  margin: 0 0 1.2rem;
+  border: 1px solid var(--line);
+  border-left: 2px solid var(--accent);
+  border-radius: 12px;
+  background: var(--paper-card);
+  overflow: hidden;
+}
+.guards-hd {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  width: 100%;
+  padding: 0.7rem 1.05rem;
+  background: none;
+  border: none;
+  font: inherit;
+  font-family: var(--sans);
+  font-size: 0.84rem;
+  color: var(--ink-soft);
+  cursor: pointer;
+  text-align: left;
+}
+.guards-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--accent); flex: none;
+}
+.guards-caret { margin-left: auto; font-size: 0.76rem; color: var(--ink-muted); }
+.guards-list {
+  margin: 0;
+  padding: 0 1.05rem 0.85rem 2.1rem;
+  font-size: 0.78rem;
+  line-height: 1.9;
+  color: var(--ink-muted);
+}
+.guards-list li { word-break: break-word; }
+
+/* ── 交付块：先说交付了什么，再给正文 ─────────────────────────────────── */
+.delivery {
+  padding: 0.85rem 1.15rem;
+  margin-bottom: 1.6rem;
+  background: var(--paper-card);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  font-family: var(--sans);
+  font-size: 0.88rem;
+  line-height: 1.9;
+  color: var(--ink-soft);
+}
+.delivery b { color: var(--ink); font-variant-numeric: tabular-nums; }
+.delivery-row.dim { color: var(--ink-muted); font-size: 0.8rem; }
+
+/* 带教途中那份可展开的提纲：当前节高亮、走过的淡出——「有没有跑偏」一眼看得见。
+   （这几个状态类此前也在 App.css 里，同样从没生效过。） */
+.outline-peek summary {
+  cursor: pointer;
+  padding: 0.35rem 0;
+  color: var(--ink-soft);
+  list-style: none;
+}
+.outline-peek summary::-webkit-details-marker { display: none; }
+.outline-peek summary::before { content: '▸ '; color: var(--ink-muted); }
+.outline-peek[open] summary::before { content: '▾ '; }
+.outline-peek .outline-list { margin: 0.4rem 0 0.8rem; }
+.outline-peek .outline-list li { margin-bottom: 0.28rem; color: var(--ink-muted); }
+.outline-peek .outline-list li.now {
+  color: var(--ink);
+  font-weight: 600;
+}
+.outline-peek .outline-list li.done { opacity: 0.45; text-decoration: line-through; }

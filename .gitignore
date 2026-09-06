@@ -1,0 +1,26 @@
+# Python and frontend build products
+__pycache__/
+*.py[oc]
+.venv/
+build/
+dist/
+wheels/
+*.egg-info/
+node_modules/
+
+# Local configuration; publish only the empty example
+.env
+.env.*
+!.env.example
+
+# Private writing, materials, evaluation datasets and raw results
+local_artifacts/
+eval_results/
+/eval_cases.json
+*.log
+
+# OS and editor state
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

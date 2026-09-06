@@ -1,0 +1,262 @@
+{
+  "_readme": "公开 smoke sample：公共知识 6 条 + 项目上下文 6 条；仅用于验证 schema、运行链路和输出结构，不得用于宣称完整评测效果。",
+  "_schema_version": "2026-08-25-v2",
+  "_freeze_version": "2026-09-04-public-sample-v1",
+  "_sample_only": true,
+  "_taxonomy_policy": "多轴枚举与必填规则以 eval_schema.py 为唯一真源。taxonomy 会进入用例语义指纹；source / note 仍只供人工审计。group_id 表示相关题族，后续不得把同组题冒充完全独立样本。",
+  "_source_policy": "主集的 correct / incorrect 金标准优先引用论文、标准或官方文档；unverifiable 不是‘搜索没搜到就算假’，而是截至 as_of 没有足以支持或反驳该陈述的可核验信息。source / note 只供人工审计，不会喂给被测系统。",
+  "_freeze": "公开样例固定为 12 条 dev 用例，每套 correct / incorrect / unverifiable 各 2 条。完整 120 条及 held-out test 只保存在本地。",
+  "_readme_material": "公开样例中的项目上下文题只使用脱敏的 daily-copilot-core 材料，用于演示 material_id 路由。",
+  "_caveat_material": "这是公开示例，不是完整开发集或 held-out test，任何得分都不能作为效果结论。",
+  "materials": {
+    "daily-copilot-core": "# daily-copilot 核心备忘\n\n模型路由共四档：raft 做机械批量活；sloop 是平衡默认档，研究员和策划使用；galleon 给导师、编辑和终审；ark 是尚未接入的顶配预留。2026-07-08 以前使用 Luna/Terra/Sol/Sirius/Cygnus，后来因和 OpenAI 新档名撞车而弃用。\n\n研究员采用 client-side ReAct 检索循环，最多 4 轮，每轮由模型决定是否调用 ddgs。策划格式不合时最多额外重试 2 次，连首次共 3 次；代码有标题长度过滤，但本备忘不记录阈值。导师按讲、问、答循环，模型判定掌握或到 5 轮结束；退化输出会重抽，但本备忘不记录次数。\n\nfact_checker 是 CRAG 简化版：拆 claim，对照素材打置信度；高于阈值放行，低于阈值改写 query 后用 ddgs 检索，再依据证据裁决，证据不足时回落裸判。multi-hop 和证据提纯被有意砍掉。单篇 claim 有条数上限但本备忘不记录数值；evidence_raw 会截断但不记录长度。\n\nrun_eval 比较同一 sloop 档的 V1 裸判与 V2 管线，另用更强档只评理由；分数写成分数而不是百分比，评分失败单列 unparsed。"
+  },
+  "cases": [
+    {
+      "id": 1,
+      "label": "correct",
+      "statement": "ReAct 范式让模型交替生成推理轨迹和任务动作，并把动作取得的外部信息用于后续推理。",
+      "split": "dev",
+      "domain": "ai_research",
+      "claim_type": [
+        "definition",
+        "capability"
+      ],
+      "evidence_mode": "public_snapshot",
+      "evidence_relation": "supports",
+      "retrieval_need": "not_needed",
+      "freshness": "stable",
+      "difficulty": "easy",
+      "risk": "standard",
+      "group_id": null,
+      "source": "https://arxiv.org/abs/2210.03629",
+      "note": "论文原始定义；稳固常识，素材外也应高置信。"
+    },
+    {
+      "id": 2,
+      "label": "correct",
+      "statement": "GitHub Actions 的 schedule 触发器使用五字段 cron；未显式设置 timezone 时，定时任务默认按 UTC 运行。",
+      "split": "dev",
+      "domain": "developer_tooling",
+      "claim_type": [
+        "configuration",
+        "numeric",
+        "temporal"
+      ],
+      "evidence_mode": "public_snapshot",
+      "evidence_relation": "supports",
+      "retrieval_need": "required",
+      "freshness": "time_sensitive",
+      "difficulty": "medium",
+      "risk": "standard",
+      "group_id": null,
+      "source": "https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#onschedule",
+      "note": "2026 文档已支持可选 IANA timezone，旧句‘一律按 UTC’不再严谨，因此冻结为‘默认 UTC’。"
+    },
+    {
+      "id": 5,
+      "label": "incorrect",
+      "statement": "OpenAI 的 function calling 接口规定模型单次回复最多只能请求一个工具调用。",
+      "split": "dev",
+      "domain": "llm_platform",
+      "claim_type": [
+        "capability",
+        "numeric"
+      ],
+      "evidence_mode": "public_snapshot",
+      "evidence_relation": "contradicts",
+      "retrieval_need": "required",
+      "freshness": "time_sensitive",
+      "difficulty": "medium",
+      "risk": "false_support",
+      "group_id": null,
+      "source": "https://platform.openai.com/docs/guides/function-calling#parallel-function-calling",
+      "note": "错：受支持的模型和配置允许并行工具调用。"
+    },
+    {
+      "id": 6,
+      "label": "incorrect",
+      "statement": "Hexo 是一个用 Python 编写的静态博客生成器。",
+      "split": "dev",
+      "domain": "developer_tooling",
+      "claim_type": [
+        "implementation"
+      ],
+      "evidence_mode": "public_snapshot",
+      "evidence_relation": "contradicts",
+      "retrieval_need": "recommended",
+      "freshness": "stable",
+      "difficulty": "easy",
+      "risk": "false_support",
+      "group_id": null,
+      "source": "https://hexo.io/",
+      "note": "错：Hexo 官方说明其由 Node.js 驱动。"
+    },
+    {
+      "id": 9,
+      "label": "unverifiable",
+      "statement": "2027 年发布的 GPT-6 将支持一千万 token 的上下文窗口。",
+      "split": "dev",
+      "domain": "llm_platform",
+      "claim_type": [
+        "future",
+        "versioned",
+        "numeric"
+      ],
+      "evidence_mode": "live_web",
+      "evidence_relation": "insufficient",
+      "retrieval_need": "required",
+      "freshness": "as_of",
+      "difficulty": "hard",
+      "risk": "false_refute",
+      "group_id": null,
+      "as_of": "2026-08-24",
+      "note": "未来产品参数；截至冻结日没有可核验的正式规格，不能把没有消息判成假。"
+    },
+    {
+      "id": 10,
+      "label": "unverifiable",
+      "statement": "业内约有九成的 agent 项目会在启动三个月内被放弃。",
+      "split": "dev",
+      "domain": "industry_statistics",
+      "claim_type": [
+        "statistical",
+        "numeric",
+        "temporal"
+      ],
+      "evidence_mode": "insufficient",
+      "evidence_relation": "insufficient",
+      "retrieval_need": "required",
+      "freshness": "as_of",
+      "difficulty": "hard",
+      "risk": "false_refute",
+      "group_id": "unsupported-industry-statistic",
+      "as_of": "2026-08-24",
+      "note": "没有定义总体、样本和调查来源的行业比例。"
+    }
+  ],
+  "cases_material": [
+    {
+      "id": 11,
+      "material_id": "daily-copilot-core",
+      "label": "correct",
+      "statement": "daily-copilot 的模型路由分四档，其中 sloop 是平衡默认档，研究员和策划都走这一档。",
+      "split": "dev",
+      "domain": "project_internal",
+      "claim_type": [
+        "configuration",
+        "numeric",
+        "enumeration"
+      ],
+      "evidence_mode": "supplied_material",
+      "evidence_relation": "supports",
+      "retrieval_need": "material_only",
+      "freshness": "stable",
+      "difficulty": "medium",
+      "risk": "standard",
+      "group_id": "project-model-routing",
+      "note": "素材里有直接依据 → 打分该落在 0.8~1.0 层（这一层此前从没被触发过）。数字「四」在素材里有同数，不该被数字铁律封顶。"
+    },
+    {
+      "id": 12,
+      "material_id": "daily-copilot-core",
+      "label": "incorrect",
+      "statement": "daily-copilot 的模型路由一共有五档，其中 galleon 是最贵的顶配档。",
+      "split": "dev",
+      "domain": "project_internal",
+      "claim_type": [
+        "configuration",
+        "numeric",
+        "comparison"
+      ],
+      "evidence_mode": "supplied_material",
+      "evidence_relation": "contradicts",
+      "retrieval_need": "material_only",
+      "freshness": "stable",
+      "difficulty": "medium",
+      "risk": "false_support",
+      "group_id": "project-model-routing",
+      "note": "素材直接打脸（4 档；顶配是 ark）。关键用例：素材必须进裁决才判得出 refute——否则低置信送去搜索，而互联网压根不知道这个私有项目，只会退成 unverifiable。"
+    },
+    {
+      "id": 13,
+      "material_id": "daily-copilot-core",
+      "label": "unverifiable",
+      "statement": "daily-copilot 的 fact_checker 里，置信度阈值 CONF_THRESHOLD 的默认值是 0.85。",
+      "split": "dev",
+      "domain": "project_internal",
+      "claim_type": [
+        "configuration",
+        "numeric"
+      ],
+      "evidence_mode": "supplied_material",
+      "evidence_relation": "insufficient",
+      "retrieval_need": "material_only",
+      "freshness": "stable",
+      "difficulty": "hard",
+      "risk": "false_support",
+      "group_id": "private-missing-number",
+      "note": "素材讲了阈值机制但没给数值，网上更查不到 → 数字铁律封顶 + 检索无果 + 裸判也不确定，三道都定不了论，这才是真 unverifiable。"
+    },
+    {
+      "id": 14,
+      "material_id": "daily-copilot-core",
+      "label": "correct",
+      "statement": "daily-copilot 里导师、编辑、终审这三个角色都走 galleon 这一档。",
+      "split": "dev",
+      "domain": "project_internal",
+      "claim_type": [
+        "configuration",
+        "enumeration"
+      ],
+      "evidence_mode": "supplied_material",
+      "evidence_relation": "supports",
+      "retrieval_need": "material_only",
+      "freshness": "stable",
+      "difficulty": "medium",
+      "risk": "standard",
+      "group_id": "project-model-routing",
+      "note": "素材逐字有依据。测的是并列项能不能被完整读出：漏掉其中一个角色就该判 refute 而不是 support，这类「说对了一半」是素材核查里最常见的错法。"
+    },
+    {
+      "id": 17,
+      "material_id": "daily-copilot-core",
+      "label": "incorrect",
+      "statement": "daily-copilot 的研究员走 galleon 档，因为检索循环对输出质量最敏感。",
+      "split": "dev",
+      "domain": "project_internal",
+      "claim_type": [
+        "configuration",
+        "causal"
+      ],
+      "evidence_mode": "supplied_material",
+      "evidence_relation": "contradicts",
+      "retrieval_need": "material_only",
+      "freshness": "stable",
+      "difficulty": "medium",
+      "risk": "false_support",
+      "group_id": "project-model-routing",
+      "note": "素材说研究员走 sloop → refute。陷阱在后半句：给了个听起来很合理的理由。考的是「理由合理 ≠ 事实成立」，模型很容易被自洽的解释带跑。"
+    },
+    {
+      "id": 19,
+      "material_id": "daily-copilot-core",
+      "label": "unverifiable",
+      "statement": "daily-copilot 的 fact_checker 单篇草稿最多抽取 30 条 claim。",
+      "split": "dev",
+      "domain": "project_internal",
+      "claim_type": [
+        "configuration",
+        "numeric"
+      ],
+      "evidence_mode": "supplied_material",
+      "evidence_relation": "insufficient",
+      "retrieval_need": "material_only",
+      "freshness": "stable",
+      "difficulty": "hard",
+      "risk": "false_support",
+      "group_id": "private-missing-number",
+      "note": "素材只说「有条数上限」，没给数值，网上也查不到 → 真 unverifiable。和 13 同型不同处：13 的机制在裁决环节，这条在抽取环节，两处都得守住数字铁律才算这一层真的通了。"
+    }
+  ]
+}

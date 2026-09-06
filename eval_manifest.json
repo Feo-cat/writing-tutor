@@ -1,0 +1,33 @@
+{
+  "schema_version": "2026-08-25-v2",
+  "full_dataset": {
+    "visibility": "local_only",
+    "path": "local_artifacts/eval/eval_cases.full.json",
+    "freeze_version": "2026-08-25-v4-pilot-120-dev60-test60",
+    "sha256": "ceab54477e9a93bb45f8da5f1ec36ac62e9a0f79629391aadc79ada1a6be3eec",
+    "total": 120,
+    "suites": {
+      "public_knowledge": {"total": 60, "dev": 30, "test": 30},
+      "project_context": {"total": 60, "dev": 30, "test": 30}
+    },
+    "labels_per_suite": {"correct": 20, "incorrect": 20, "unverifiable": 20},
+    "material_packs": {
+      "daily-copilot-core": 15,
+      "mcp-runtime": 15,
+      "writing-workflow": 15,
+      "eval-integrity": 15
+    }
+  },
+  "public_sample": {
+    "path": "eval_cases.sample.json",
+    "freeze_version": "2026-09-04-public-sample-v1",
+    "sha256": "fe390e9964b2fe078e30f32134dd9b780e26d734fbc295baf270b1f985fc3119",
+    "total": 12,
+    "suites": {
+      "public_knowledge": 6,
+      "project_context": 6
+    },
+    "labels_per_suite": {"correct": 2, "incorrect": 2, "unverifiable": 2},
+    "purpose": "schema and pipeline smoke sample; not a benchmark result"
+  }
+}
