@@ -16,6 +16,10 @@ if os.environ.get("FORCE_STUB_FASTAPI"):
     sys.path.insert(0, _FALLBACK)
 else:
     sys.path.append(_FALLBACK)
+# 测试只使用 _stubs 中的模型 SDK，不读取或使用个人服务配置。
+os.environ["LLM_API_KEY"] = "test-only-key"
+os.environ["LLM_BASE_URL"] = "https://model.example.test/v1"
+os.environ["TOKEN_PARAM"] = "max_tokens"
 os.environ.setdefault("LLM_MODEL", "stub-model")   # 让 TIERS 能建起来
 os.environ["TUTOR_RETRY"] = "2"
 
@@ -187,7 +191,7 @@ def collect(gen):
 
 check("making-of 访谈员 prompt 已生效（server 侧）", "访谈员" in wa.TUTOR_SYS)
 
-evs = collect(server.start_stream("网页选题", False))
+evs = collect(server.start_stream("网页选题"))
 meta = next(e for e in evs if e["type"] == "meta")
 sid = meta["sessionId"]
 
@@ -215,7 +219,7 @@ ts = open(os.environ["MAKINGOF_OUT"] + ".transcript.md", encoding="utf-8").read(
 check("web transcript 逐句落盘（含多行答案）", "答：网页答0\n第二行0" in ts)
 
 wplan["n"] = 0                                        # 续跑：全节已在草稿 → 跳过所有节直接收尾
-evs2 = collect(server.start_stream("网页选题", False))
+evs2 = collect(server.start_stream("网页选题"))
 meta2 = next(e for e in evs2 if e["type"] == "meta")
 done2 = next(e for e in evs2 if e["type"] == "done")
 check("web 续跑跳过全部已完成节", meta2["secIdx"] == 3)

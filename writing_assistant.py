@@ -18,9 +18,8 @@ try:                       # 这个搜索包 2024 后从 duckduckgo_search 改�
 except ImportError:
     from duckduckgo_search import DDGS
 
-load_dotenv()
-
 _HERE = os.path.dirname(os.path.abspath(__file__))
+load_dotenv(os.path.join(_HERE, ".env"))
 LOCAL_ARTIFACTS_DIR = os.path.abspath(
     os.getenv("LOCAL_ARTIFACTS_DIR") or os.path.join(_HERE, "local_artifacts")
 )
@@ -39,16 +38,86 @@ def blog_artifact_path(filename: str) -> str:
         raise ValueError(f"非法博客产物文件名：{filename!r}")
     return os.path.join(blog_artifacts_dir(), filename)
 
-# OpenAI 兼容客户端：base_url / key 都从 .env 读，换 provider 不改代码。
-# base_url 不设 = 官方 OpenAI；key 不设 = 回落到 OPENAI_API_KEY。
-client = OpenAI(
-    base_url=os.getenv("LLM_BASE_URL") or None,
-    api_key=os.getenv("LLM_API_KEY") or os.getenv("OPENAI_API_KEY"),
-)
+# 只在真实调用前建立客户端；空配置也能打开网页查看配置说明与已有作品。
+client: OpenAI | None = None
 
 # 新版 OpenAI 直连的 GPT-5 系列要用 max_completion_tokens；多数兼容 provider 用 max_tokens。
 # 默认 max_tokens（最通用）；OpenAI 直连若报错，就在 .env 设 TOKEN_PARAM=max_completion_tokens。
 _TOKEN_PARAM = os.getenv("TOKEN_PARAM", "max_tokens")
+
+
+class ConfigurationError(ValueError):
+    """可以直接展示给用户的配置错误，不包含密钥或服务端原始响应。"""
+
+
+def _api_key() -> str:
+    return (os.getenv("LLM_API_KEY") or "").strip() or (os.getenv("OPENAI_API_KEY") or "").strip()
+
+
+def _provider_issues() -> list[str]:
+    issues = []
+    if not _api_key():
+        issues.append("请在 .env 中填写 LLM_API_KEY（也可使用 OPENAI_API_KEY）。")
+    url = (os.getenv("LLM_BASE_URL") or "").strip()
+    if url:
+        try:
+            parsed = urlparse(url)
+            valid = (parsed.scheme in ("http", "https") and bool(parsed.hostname)
+                     and not parsed.username and not parsed.password
+                     and not parsed.query and not parsed.fragment
+                     and not any(c.isspace() for c in url))
+            parsed.port  # 同时检查端口是否为合法数字。
+        except ValueError:
+            valid = False
+        if not valid:
+            issues.append("LLM_BASE_URL 请填写完整的 http/https API 地址，不要在地址中附带密钥。")
+    if _TOKEN_PARAM not in ("max_tokens", "max_completion_tokens"):
+        issues.append("TOKEN_PARAM 只能填写 max_tokens 或 max_completion_tokens。")
+    return issues
+
+
+def configuration_status() -> dict:
+    """只返回配置是否齐全，不返回配置值，也不发起模型请求。"""
+    issues = _provider_issues()
+    if not TIERS["sloop"]:
+        issues.append("请填写 LLM_MODEL，或单独填写研究与策划使用的 MODEL_SLOOP。")
+    if not TIERS["galleon"]:
+        issues.append("请填写 LLM_MODEL，或单独填写教学与编辑使用的 MODEL_GALLEON。")
+    return {"ready": not issues, "issues": issues,
+            "checks": [{"label": "API 密钥", "configured": bool(_api_key())},
+                       {"label": "研究与策划模型", "configured": bool(TIERS["sloop"])},
+                       {"label": "教学与编辑模型", "configured": bool(TIERS["galleon"])}]}
+
+
+def _get_client() -> OpenAI:
+    global client
+    if client is None:
+        issues = _provider_issues()
+        if issues:
+            raise ConfigurationError(" ".join(issues))
+        client = OpenAI(base_url=(os.getenv("LLM_BASE_URL") or "").strip() or None,
+                        api_key=_api_key())
+    return client
+
+
+def public_error(exc: Exception) -> str:
+    """向网页返回可操作的固定提示，避免回显服务商响应中的密钥或私人正文。"""
+    if isinstance(exc, ConfigurationError):
+        return str(exc)
+    messages = {
+        "AuthenticationError": "模型服务拒绝了密钥，请检查 LLM_API_KEY 并重启后台。",
+        "PermissionDeniedError": "当前密钥没有使用此模型的权限，请检查服务商设置。",
+        "NotFoundError": "模型或 API 地址不存在，请检查模型名称和 LLM_BASE_URL。",
+        "BadRequestError": "模型服务不接受本次请求。研究模型需支持工具调用；请检查模型协议与 TOKEN_PARAM。",
+        "RateLimitError": "模型服务暂时限流或额度不足，请查看服务商账户状态后再试。",
+        "APIConnectionError": "无法连接模型服务，请检查网络与 LLM_BASE_URL。",
+        "APITimeoutError": "模型服务响应超时，请稍后再试。",
+    }
+    if type(exc).__name__ in messages:
+        return messages[type(exc).__name__]
+    if isinstance(exc, OSError):
+        return "本地文件无法读取或保存，请检查素材路径及作品目录的访问权限。"
+    return "写作步骤未完成，请查看后台错误位置。已保存的作品仍在本地目录中。"
 
 
 def _sampling() -> dict:
@@ -180,14 +249,11 @@ def stamp_source(prefix: str, key: str = "") -> str:
     return ""
 
 
-def ledger_rows(src: str, path: str = "") -> list[dict]:
-    """从网关账本里捞出这个来源的所有行。
-
-    为什么读账本而不用 gw_report()：**那个读的是进程内存**（`_GW_LOG`），
-    进程一死就没了，事后拿不出来。账本是只追加的文件——**它才是事后可查的物证**。"""
+def ledger_snapshot(src: str, path: str = "") -> tuple[str, list[dict]]:
+    """区分未接入、无法读取、无匹配记录和已有记录；状态不包含个人路径。"""
     path = path or GW_LEDGER
-    if not os.path.exists(path):
-        return []
+    if not path:
+        return "not_configured", []
     out = []
     try:
         with open(path, encoding="utf-8") as f:
@@ -198,17 +264,25 @@ def ledger_rows(src: str, path: str = "") -> list[dict]:
                     r = json.loads(ln)
                 except json.JSONDecodeError:
                     continue               # 账本被写坏的那一行跳过，别让它拖垮整份凭据
-                if r.get("source") == src:
+                if isinstance(r, dict) and r.get("source") == src:
                     out.append(r)
-    except OSError:
-        return []
-    return out
+    except (OSError, UnicodeError):
+        return "unavailable", []
+    return ("available" if out else "no_records"), out
+
+
+def ledger_rows(src: str, path: str = "") -> list[dict]:
+    """保留供评测工具使用的行列表接口。"""
+    return ledger_snapshot(src, path)[1]
 
 
 def _create(model: str, messages: list[dict], max_tokens: int, tools: list | None = None,
             no_cache: bool = False, response_format: dict | None = None):
     """所有 LLM 调用的唯一出口：把 token 上限参数名收敛到一处，顺带可选 tools + 采样参数。
     no_cache=True 时给这一笔单独盖 X-GW-Cache: off——重抽专用，理由见下面那段注释。"""
+    if not model or not model.strip():
+        raise ConfigurationError("此步骤尚未配置模型，请填写 LLM_MODEL 或对应的 MODEL_* 后重启后台。")
+    sdk = _get_client()
     kw = {"model": model, "messages": messages, _TOKEN_PARAM: max_tokens, **_sampling()}
     if tools:
         kw["tools"] = tools
@@ -228,7 +302,7 @@ def _create(model: str, messages: list[dict], max_tokens: int, tools: list | Non
 
     # 先看 SDK 给不给响应头，再决定走哪条路——**不用 try/except 去试**：
     # 真调用抛出来的异常要是被这里吞掉再走一遍普通 create，那就是同一个问题收两次钱。
-    raw = getattr(client.chat.completions, "with_raw_response", None) if _GW_HEADERS_ON else None
+    raw = getattr(sdk.chat.completions, "with_raw_response", None) if _GW_HEADERS_ON else None
     if raw is not None:
         resp = raw.create(**kw)
         _gw_note(model, getattr(resp, "headers", None))
@@ -236,19 +310,14 @@ def _create(model: str, messages: list[dict], max_tokens: int, tools: list | Non
         return parse() if callable(parse) else resp
 
     _gw_note(model, None)   # 拿不到头也要留一条：记录的是「查不了」，不是「没降级」
-    return client.chat.completions.create(**kw)
+    return sdk.chat.completions.create(**kw)
 
 
-_DEFAULT_MODEL = os.getenv("LLM_MODEL")
+_DEFAULT_MODEL = (os.getenv("LLM_MODEL") or "").strip()
 
 
 def _tier(name: str) -> str:
-    m = os.getenv(f"MODEL_{name.upper()}") or _DEFAULT_MODEL
-    if not m:
-        raise RuntimeError(
-            f"未配置模型：在 .env 里设 LLM_MODEL（全局默认）或 MODEL_{name.upper()}（单档覆盖）。见 .env.example"
-        )
-    return m
+    return (os.getenv(f"MODEL_{name.upper()}") or "").strip() or _DEFAULT_MODEL
 
 
 TIERS = {name: _tier(name) for name in ("raft", "sloop", "galleon", "ark")}

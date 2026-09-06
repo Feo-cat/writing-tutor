@@ -33,6 +33,10 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "_st
 
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "_stubs_fallback"))
 
+# 测试只使用 _stubs 中的模型 SDK，不读取或使用个人服务配置。
+os.environ["LLM_API_KEY"] = "test-only-key"
+os.environ["LLM_BASE_URL"] = "https://model.example.test/v1"
+os.environ["TOKEN_PARAM"] = "max_tokens"
 os.environ.setdefault("LLM_MODEL", "stub-model")   # 让 TIERS 能建起来
 os.environ.pop("LLM_TEMPERATURE", None)
 os.environ.pop("LLM_SEED", None)

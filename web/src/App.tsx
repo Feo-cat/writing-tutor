@@ -6,8 +6,8 @@
 import { useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent, ReactNode } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { sendAnswer, startSession, beginSession, replanOutline, fetchArchive, fetchArchiveOne } from './api'
-import type { ArchivePost, ArchiveDetail } from './api'
+import { sendAnswer, startSession, beginSession, replanOutline, fetchArchive, fetchArchiveOne, fetchConfiguration } from './api'
+import type { ArchivePost, ArchiveDetail, ConfigurationStatus } from './api'
 import type { Phase, SSEEvent } from './api'
 
 // ── 一节里已完成的一轮（讲/问/你答），或换节分隔 ────────────────────────────
@@ -164,6 +164,7 @@ const TAB_LABEL = {
 } as const
 
 const kb = (n: number) => (n >= 1024 ? `${(n / 1024).toFixed(1)}k` : `${n}`)
+const costLabel = (cost: number | null) => cost === null ? '费用未知' : `$${cost.toFixed(4)}`
 
 /** 制作凭据：这一篇在自建网关账本上留下的每一笔。
  *  账本查不到时**如实说查不到**，绝不拿全局总量顶上——
@@ -172,28 +173,31 @@ function Receipt({ r }: { r: ArchiveDetail['receipt'] }) {
   const models = Object.entries(r.by_model)
   return (
     <div className="receipt">
-      <div className="receipt-hd">制作凭据 · <code>{r.source}</code></div>
+      <div className="receipt-hd">写作记录</div>
       {r.rounds > 0 && (
         <div className="receipt-line">
           作者本人打了 <b>{r.author_chars}</b> 字，分 <b>{r.rounds}</b> 轮 ——
           逐句原话在「逐句问答」那一栏，一个字没改过
         </div>
       )}
-      {r.calls > 0 ? (
+      {r.ledger_status === 'available' ? (
         <>
           <div className="receipt-line">
-            共 <b>{r.calls}</b> 次模型调用 ｜ ${r.cost.toFixed(4)} ｜ {(r.ms / 1000).toFixed(1)}s
+            已记录 <b>{r.calls}</b> 次模型调用 ｜ {costLabel(r.cost)} ｜ {(r.ms / 1000).toFixed(1)}s
           </div>
           {models.map(([m, d]) => (
             <div key={m} className="receipt-line dim">
-              · {m} {d.n} 次 ｜ in {d.tin} / out {d.tout} tok ｜ ${d.cost.toFixed(4)}
+              · {m} {d.n} 次 ｜ in {d.tin} / out {d.tout} tok ｜ {costLabel(d.cost)}
             </div>
           ))}
         </>
       ) : (
         <div className="receipt-line dim">
-          账本里查不到这一篇 —— 它是加按篇来源戳之前跑的，流量混在「未标注」里分不出来。
-          <b>查不到就是查不到，这里不拿全局总量替它编一个数。</b>
+          {r.ledger_status === 'not_configured'
+            ? '未接入费用记录。写作功能可正常使用，实际费用请查看模型服务商账单。'
+            : r.ledger_status === 'unavailable'
+              ? '费用记录暂时无法读取，请检查所配置的账本文件。'
+              : '暂无这篇文章的费用记录，实际费用请查看模型服务商账单。'}
         </div>
       )}
     </div>
@@ -202,7 +206,9 @@ function Receipt({ r }: { r: ArchiveDetail['receipt'] }) {
 
 export default function App() {
   const [stage, setStage] = useState<'input' | 'archive' | 'running' | 'done'>('input')
-  const [stub, setStub] = useState(true)
+  const [configuration, setConfiguration] = useState<ConfigurationStatus | null>(null)
+  const [configError, setConfigError] = useState('')
+  const [checkingConfig, setCheckingConfig] = useState(true)
   const [topic, setTopic] = useState('')
 
   const [sessionId, setSessionId] = useState('')
@@ -236,6 +242,28 @@ export default function App() {
   const [review, setReview] = useState('')
 
   const bottomRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    let active = true
+    fetchConfiguration()
+      .then((value) => { if (active) setConfiguration(value) })
+      .catch(() => { if (active) setConfigError('暂时无法读取后台配置，请确认后台已启动。') })
+      .finally(() => { if (active) setCheckingConfig(false) })
+    return () => { active = false }
+  }, [])
+
+  async function recheckConfiguration() {
+    setCheckingConfig(true)
+    setConfigError('')
+    try {
+      setConfiguration(await fetchConfiguration())
+    } catch {
+      setConfiguration(null)
+      setConfigError('暂时无法读取后台配置，请确认后台已启动。')
+    } finally {
+      setCheckingConfig(false)
+    }
+  }
 
   useEffect(() => {
     // 读不到不算错误——第一次用的人本来就没有档案。**「还没有」和「坏了」是两件事。**
@@ -305,7 +333,7 @@ export default function App() {
 
   async function start() {
     const t = topic.trim()
-    if (!t || busy) return
+    if (!t || busy || checkingConfig || !configuration?.ready) return
     setStage('running')
     setItems([])
     setCurrent(null)
@@ -314,7 +342,7 @@ export default function App() {
     setBusy(true)
     setPhase('researching')
     try {
-      await startSession(t, stub, handle)
+      await startSession(t, handle)
     } catch (err) {
       setError(String(err))
       setBusy(false)
@@ -400,21 +428,10 @@ export default function App() {
     <div className="app">
       <div className="topbar">
         <span className="brand">写作助手</span>
-        {stage === 'input' ? (
-          <span
-            className={'stub-toggle' + (stub ? '' : ' real')}
-            onClick={() => setStub((s) => !s)}
-            title="开＝写死的假内容点通流程，不花钱；关＝真调 agent（产生费用）"
-          >
-            <span className="dot" />
-            {stub ? '假数据模式 · 免费' : '真实模式 · 会计费'}
-          </span>
-        ) : (
-          <span className="stub-toggle" style={{ cursor: 'default' }}>
-            <span className="dot" style={{ background: stub ? '#6b8f71' : 'var(--accent)' }} />
-            {stub ? '假数据' : '真实'}
-          </span>
-        )}
+        <span className="service-status" role="status">
+          <span className={'dot' + (configuration?.ready ? ' ready' : '')} />
+          {checkingConfig ? '检查配置中' : configuration?.ready ? '真实写作' : '等待配置'}
+        </span>
       </div>
 
       <AnimatePresence mode="wait">
@@ -424,6 +441,35 @@ export default function App() {
               <img className="hero-img" src="/pen.jpeg" alt="写作助手" />
               <h1 className="hero-title">写作助手</h1>
               <p className="hero-sub">像导师一样先讲再问，带你边学边写 —— 产出你自己声音的初稿与终审意见。</p>
+              <section className="setup-panel" aria-label="模型配置">
+                <h2>{configuration?.ready ? '模型配置已填写' : '先连接你的模型服务'}</h2>
+                {checkingConfig && <p role="status">正在读取配置状态…</p>}
+                {configError && <p role="alert">{configError}</p>}
+                {configuration && (
+                  <ul className="setup-checks">
+                    {configuration.checks.map((item) => (
+                      <li key={item.label}>{item.configured ? '✓' : '○'} {item.label}</li>
+                    ))}
+                  </ul>
+                )}
+                {configuration?.ready ? (
+                  <p>点击“开始写作”后会使用真实模型，可能产生费用。密钥有效性与模型兼容性会在调用时检查。</p>
+                ) : (
+                  <>
+                    <ol>
+                      <li>将项目中的 <code>.env.example</code> 复制为 <code>.env</code>。</li>
+                      <li>填写服务地址 <code>LLM_BASE_URL</code>、密钥 <code>LLM_API_KEY</code> 和模型名称 <code>LLM_MODEL</code>。直连 OpenAI 时地址可留空。</li>
+                      <li>保存后重启后台，再点击“重新检查”。研究模型需要支持工具调用。</li>
+                    </ol>
+                    {configuration && configuration.issues.length > 0 && (
+                      <ul className="setup-issues">{configuration.issues.map((issue) => <li key={issue}>{issue}</li>)}</ul>
+                    )}
+                  </>
+                )}
+                <button className="btn btn-quiet" onClick={recheckConfiguration} disabled={checkingConfig}>
+                  {checkingConfig ? '检查中…' : '重新检查'}
+                </button>
+              </section>
               <div className="topic-form">
                 <input
                   className="topic-input"
@@ -432,7 +478,7 @@ export default function App() {
                   onChange={(e) => setTopic(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && start()}
                 />
-                <button className="btn btn-primary" onClick={start} disabled={!topic.trim()}>
+                <button className="btn btn-primary" onClick={start} disabled={!topic.trim() || busy || checkingConfig || !configuration?.ready}>
                   开始写作
                 </button>
               </div>

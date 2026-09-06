@@ -47,7 +47,7 @@ a { color: var(--accent-deep); }
   min-height: 100%;
 }
 
-/* ── 顶栏：标识 + 假数据开关 ──────────────────────────────────────────── */
+/* ── 顶栏：标识与配置状态 ────────────────────────────────────────────── */
 .topbar {
   display: flex;
   align-items: center;
@@ -55,20 +55,38 @@ a { color: var(--accent-deep); }
   margin-bottom: 1.2rem;
 }
 .topbar .brand { font-family: var(--serif); font-size: 1.05rem; color: var(--ink-soft); }
-.stub-toggle {
+.service-status {
   display: inline-flex;
   align-items: center;
   gap: 0.45rem;
   font-size: 0.8rem;
   color: var(--ink-muted);
-  cursor: pointer;
-  user-select: none;
 }
-.stub-toggle .dot {
+.service-status .dot {
   width: 8px; height: 8px; border-radius: 50%;
-  background: #6b8f71; /* 绿点=免费 */
+  background: var(--ink-muted);
 }
-.stub-toggle.real .dot { background: var(--accent); }
+.service-status .dot.ready { background: var(--accent); }
+
+.setup-panel {
+  max-width: 32rem;
+  margin: 0 auto 1.5rem;
+  padding: 1rem 1.2rem;
+  text-align: left;
+  background: var(--paper-card);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  color: var(--ink-soft);
+  font-size: 0.88rem;
+  overflow-wrap: anywhere;
+}
+.setup-panel h2 { font-size: 1.2rem; margin: 0 0 0.7rem; }
+.setup-panel p { margin: 0.6rem 0; }
+.setup-panel ol, .setup-issues { padding-left: 1.3rem; }
+.setup-panel li + li { margin-top: 0.3rem; }
+.setup-checks { display: flex; flex-wrap: wrap; gap: 0.4rem 1rem; padding: 0; list-style: none; }
+.setup-checks li + li { margin: 0; }
+.setup-issues { color: var(--accent-deep); }
 
 /* ── 落地页 ───────────────────────────────────────────────────────────── */
 .hero { text-align: center; padding-top: 4vh; }
@@ -88,6 +106,7 @@ a { color: var(--accent-deep); }
 }
 .topic-form { display: flex; gap: 0.6rem; max-width: 32rem; margin: 0 auto; }
 .topic-input {
+  min-width: 0;
   flex: 1;
   font-family: var(--sans);
   font-size: 1rem;

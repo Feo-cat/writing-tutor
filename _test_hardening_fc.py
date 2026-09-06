@@ -17,6 +17,10 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "_st
 
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "_stubs_fallback"))
 
+# 测试只使用 _stubs 中的模型 SDK，不读取或使用个人服务配置。
+os.environ["LLM_API_KEY"] = "test-only-key"
+os.environ["LLM_BASE_URL"] = "https://model.example.test/v1"
+os.environ["TOKEN_PARAM"] = "max_tokens"
 os.environ.setdefault("LLM_MODEL", "stub-model")   # 让 TIERS 能建起来
 os.environ.pop("LLM_TEMPERATURE", None)            # 采样参数测试要求初始干净
 os.environ.pop("LLM_SEED", None)
@@ -555,11 +559,11 @@ check("HTML 转文本：保留可见正文，丢弃 style/script",
 
 # ── 12. A3：采样参数默认不发（不发 = 用 provider 默认 = 全仓一直以来的行为）──
 _cap = {}
-_orig_sdk = wa.client.chat.completions.create
+_orig_sdk = wa._get_client().chat.completions.create
 def _capture(**kw):
     _cap.clear(); _cap.update(kw)
     return _FR("x")
-wa.client.chat.completions.create = _capture
+wa._get_client().chat.completions.create = _capture
 
 wa._create("m", [{"role": "system", "content": "s"}, {"role": "user", "content": "u"}], 100)
 check("A3：没设 LLM_TEMPERATURE 时不发 temperature 键（行为向后兼容）", "temperature" not in _cap)
@@ -575,7 +579,7 @@ wa._create("m", [{"role": "user", "content": "u"}], 100,
 check("结构化调用的 response_format 能从统一出口透传到 SDK",
       _cap.get("response_format") == {"type": "json_object"})
 os.environ.pop("LLM_TEMPERATURE"); os.environ.pop("LLM_SEED")
-wa.client.chat.completions.create = _orig_sdk
+wa._get_client().chat.completions.create = _orig_sdk
 
 
 print(f"\n{'='*48}\n{sum(RESULTS)}/{len(RESULTS)} 通过")

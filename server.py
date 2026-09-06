@@ -13,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 import writing_assistant as wa
-from writing_assistant import DONE_TAG, MAX_ROUNDS, TIERS
+from writing_assistant import MAX_ROUNDS
 
 
 os.environ.setdefault("GW_SOURCE", "web")
@@ -36,7 +36,7 @@ def _warns():
 
 MAKINGOF_MATERIAL = os.getenv("MAKINGOF_MATERIAL", "").strip()
 MAKINGOF_OUT = (os.getenv("MAKINGOF_OUT", "").strip()
-                or wa.blog_artifact_path("draft-makingof.md"))
+                or os.path.join(wa.BLOG_ARTIFACTS_DIR, "draft-makingof.md"))
 if MAKINGOF_MATERIAL:
     import makingof as df
 
@@ -47,36 +47,44 @@ def _artifact(filename: str) -> str:
 
 app = FastAPI(title="写作助手")
 
+
+@app.get("/api/config")
+def api_config():
+    status = wa.configuration_status()
+    if MAKINGOF_MATERIAL and not (os.path.isfile(MAKINGOF_MATERIAL) and os.access(MAKINGOF_MATERIAL, os.R_OK)):
+        status["issues"].append("项目复盘素材无法读取，请检查 MAKINGOF_MATERIAL 的文件路径与权限。")
+        status["ready"] = False
+    status["mode"] = "makingof" if MAKINGOF_MATERIAL else "learn"
+    return status
+
+
+def _require_configuration():
+    status = api_config()
+    if not status["ready"]:
+        raise wa.ConfigurationError(" ".join(status["issues"]))
+
 # ── 会话存储：本地单用户，内存里一个 dict 就够 ──────────────────────────────────
 # 每个会话保存以下写作状态：
-#   {topic, stub, messages, material, outline, sec_idx, parts, records, pending, draft}
+#   {topic, messages, material, outline, sec_idx, parts, records, pending, draft}
 SESSIONS: dict[str, dict] = {}
 
 
-def gen_material(topic: str, stub: bool) -> str:
+def gen_material(topic: str) -> str:
     if MAKINGOF_MATERIAL:                       # making-of：手写素材顶替研究员，绝不上网搜
         return open(MAKINGOF_MATERIAL, encoding="utf-8").read()
-    if stub:
-        return (f"（假素材简报 · 选题「{topic}」）\n- 要点一：核心概念是 XXX\n"
-                "- 要点二：常见误区是 YYY\n- 要点三：和你项目的关系是 ZZZ")
     return wa.research_topic(topic)
 
 
-def gen_outline(topic: str, material: str, stub: bool, feedback: str = "",
+def gen_outline(topic: str, material: str, feedback: str = "",
                 previous: list[dict] | None = None) -> list[dict]:
     """feedback ＝ 作者对上一版提纲的意见（只有重排那条路会给）。
     带着意见重排时**必须连上一版一起给策划**，理由见 wa._replan_block。"""
-    if stub:
-        return [
-            {"title": "一、先建立直觉", "points": "用一个最小例子讲清核心概念"},
-            {"title": "二、为什么这么设计", "points": "对照你自己的项目说说取舍"},
-        ]
-    if MAKINGOF_MATERIAL:
+    if MAKINGOF_MATERIAL and not (feedback or previous):
         return df._load_or_make_outline(topic, material, MAKINGOF_OUT + ".outline.json")
 
 
-    cache = _artifact(f"{wa.slugify(topic)}.outline.json")
-    if os.path.exists(cache):
+    cache = (MAKINGOF_OUT + ".outline.json") if MAKINGOF_MATERIAL else _artifact(f"{wa.slugify(topic)}.outline.json")
+    if not (feedback or previous) and os.path.exists(cache):
         try:
             with open(cache, encoding="utf-8") as f:
                 cached = json.load(f)
@@ -87,34 +95,24 @@ def gen_outline(topic: str, material: str, stub: bool, feedback: str = "",
             print(f"  ⚠ 提纲缓存读不了（{e}），重排一次")
     outline = wa.plan_outline(topic, material, feedback, previous)
     with open(cache, "w", encoding="utf-8") as f:
-        json.dump({"topic": topic, "outline": outline}, f, ensure_ascii=False, indent=2)
+        json.dump(outline if MAKINGOF_MATERIAL else {"topic": topic, "outline": outline},
+                  f, ensure_ascii=False, indent=2)
     return outline
 
 
-def tutor_turn(messages: list[dict], n_records: int, stub: bool) -> str:
+def tutor_turn(messages: list[dict]) -> str:
     """导师这一轮：要么「讲+问」，要么吐暗号判定掌握。"""
-    if stub:
-        out = (f"{DONE_TAG} （假）你已经能用自己的话解释清楚了。" if n_records >= 2
-               else (f"讲：（假讲解 #{n_records + 1}）这是导师讲的一个小概念，人话 + 小例子。\n"
-                     "问：用你自己的话，把刚才这点复述一遍？"))
-        messages.append({"role": "assistant", "content": out})   # 与真分支保持一致
-        return out
 
 
     return wa.tutor_turn(messages)
 
 
-def gen_body(section: dict, records: list[dict], stub: bool) -> str:
-    if stub:
-        return f"（假初稿）「{section['title']}」这一节，由你的 {len(records)} 轮回答串成。"
+def gen_body(section: dict, records: list[dict]) -> str:
     return wa.edit_section(section, records)
 
 
-def gen_review(draft: str, stub: bool, sess: dict | None = None) -> str:
+def gen_review(draft: str, sess: dict | None = None) -> str:
     """生成终审意见，并提供选题、提纲；项目复盘模式还提供本地素材。"""
-    if stub:
-        return ("（假终审意见）\n1.【事实/逻辑】这块没问题。\n"
-                "2.【清晰】第二段建议补一个具体例子。\n3.【结构】整体顺畅。")
     if sess is None:
         return wa.critique(draft)
     return wa.critique(
@@ -142,7 +140,7 @@ def _start_section(sess: dict) -> None:
     s = sess["outline"][sess["sec_idx"]]
     sess["messages"] = _build_section_messages(s, sess["material"], sess.get("parts"))
     sess["records"] = []
-    out = tutor_turn(sess["messages"], 0, sess["stub"])   # 它自己会记进 messages
+    out = tutor_turn(sess["messages"])   # 它自己会记进 messages
     sess["pending"] = out
 
 
@@ -162,6 +160,7 @@ def _lesson_event(sess: dict) -> str:
 def _ensure_draft_header(topic: str) -> None:
     """making-of：草稿文件不存在才落标题（续写只追加，不清空已有内容）。"""
     if not os.path.exists(MAKINGOF_OUT):
+        os.makedirs(os.path.dirname(os.path.abspath(MAKINGOF_OUT)), exist_ok=True)
         with open(MAKINGOF_OUT, "w", encoding="utf-8") as f:
             f.write(f"# {topic}\n\n")
 
@@ -169,18 +168,17 @@ def _ensure_draft_header(topic: str) -> None:
 def _finalize(sess: dict) -> tuple[str, str]:
     """收尾：making-of 以草稿【文件】为准（含上一次网页完成的节），终审幂等；
     学习模式维持原来的内存拼接。返回 (draft, review)。"""
-    stub = sess["stub"]
-    if MAKINGOF_MATERIAL and not stub:
+    if MAKINGOF_MATERIAL:
         draft = sess["draft"] = open(MAKINGOF_OUT, encoding="utf-8").read()
         if df._has_critique(MAKINGOF_OUT):
             return draft, "（终审意见此前已生成，就在草稿文件末尾，未重复调用。）"
-        review = gen_review(draft, stub, sess)
+        review = gen_review(draft, sess)
         with open(MAKINGOF_OUT, "a", encoding="utf-8") as f:
             f.write("\n---\n\n## 🔍 终审意见\n\n" + review + "\n")
         return draft, review
     slug = sess.get("slug") or wa.slugify(sess["topic"])
     _p = _artifact(f"{slug}.md")
-    if not stub and os.path.exists(_p):
+    if os.path.exists(_p):
         # **以文件为准**，跟 making-of 一个规矩：续跑时文件里含着此前那次写好的节，
         # 而内存里的 parts 只有这一次跑的（加上启动时回填的）。文件才是完整的那份。
         with open(_p, encoding="utf-8") as f:
@@ -188,20 +186,24 @@ def _finalize(sess: dict) -> tuple[str, str]:
     else:
         draft = f"# {sess['topic']}\n\n" + "\n\n".join(sess["parts"])
     sess["draft"] = draft
-    review = gen_review(draft, stub, sess)
-    if not stub:
-        with open(_artifact(f"{slug}.review.md"), "w", encoding="utf-8") as f:
-            f.write(f"# 终审意见 · {sess['topic']}\n\n{review}\n")
+    review = gen_review(draft, sess)
+    with open(_artifact(f"{slug}.review.md"), "w", encoding="utf-8") as f:
+        f.write(f"# 终审意见 · {sess['topic']}\n\n{review}\n")
     return draft, review
 
 
 # ── SSE 流 1：开篇 —— 研究员 → 策划 → 进第一节、导师第一轮 ──────────────────────
-def start_stream(topic: str, stub: bool, confirm_outline: bool = True):
+def start_stream(topic: str, confirm_outline: bool = True):
+    _require_configuration()
+    if not topic.strip():
+        raise wa.ConfigurationError("请先输入选题。")
+    if MAKINGOF_MATERIAL:
+        os.makedirs(os.path.dirname(os.path.abspath(MAKINGOF_OUT)), exist_ok=True)
     sid = uuid.uuid4().hex
-    sess = SESSIONS[sid] = {"topic": topic, "stub": stub, "sec_idx": 0, "parts": []}
+    sess = SESSIONS[sid] = {"topic": topic, "sec_idx": 0, "parts": []}
 
     # 学习模式的边车文件名先算出来——下面研究员那步就要用它判断能不能复用。
-    sess["slug"] = wa.slugify(topic) if (not MAKINGOF_MATERIAL and not stub) else ""
+    sess["slug"] = wa.slugify(topic) if not MAKINGOF_MATERIAL else ""
     _stamp(sess)
 
     yield sse({"type": "phase", "phase": "researching"})    # making-of 模式这步秒过：读手写素材
@@ -213,7 +215,7 @@ def start_stream(topic: str, stub: bool, confirm_outline: bool = True):
             sess["material"] = f.read()
         print(f"  ♻ 复用已缓存素材（{len(sess['material'])} 字）：{_mat}")
     else:
-        sess["material"] = gen_material(topic, stub)
+        sess["material"] = gen_material(topic)
         yield from _warns()
 
 
@@ -222,15 +224,15 @@ def start_stream(topic: str, stub: bool, confirm_outline: bool = True):
                 f.write(sess["material"])
 
     yield sse({"type": "phase", "phase": "planning"})       # 策划分节（making-of：提纲固定 + 复用）
-    outline = sess["outline"] = gen_outline(topic, sess["material"], stub)
+    outline = sess["outline"] = gen_outline(topic, sess["material"])
     yield from _warns()
 
-    if MAKINGOF_MATERIAL and not stub:                      # 断点续跑：草稿里已有的节直接跳过
+    if MAKINGOF_MATERIAL:                      # 断点续跑：草稿里已有的节直接跳过
         _ensure_draft_header(topic)
         done = df._done_titles(MAKINGOF_OUT)
         while sess["sec_idx"] < len(outline) and outline[sess["sec_idx"]]["title"] in done:
             sess["sec_idx"] += 1
-    elif not stub:
+    else:
 
 
         draft_path = _artifact(f"{sess['slug']}.md") if sess.get("slug") else ""
@@ -257,7 +259,7 @@ def start_stream(topic: str, stub: bool, confirm_outline: bool = True):
                "secIdx": sess["sec_idx"], "total": len(outline)})
 
 
-    if confirm_outline and not stub and sess["sec_idx"] < len(outline):
+    if confirm_outline and sess["sec_idx"] < len(outline):
         yield sse({"type": "awaiting_outline",
                    "outline": [{"title": x["title"], "points": x.get("points", "")}
                                for x in outline]})
@@ -269,6 +271,7 @@ def start_stream(topic: str, stub: bool, confirm_outline: bool = True):
 
 def _begin_stream(sess: dict):
     """确认提纲之后真正开跑：各节答齐就直接收尾，否则进第一节、导师第一轮。"""
+    _require_configuration()
     outline = sess["outline"]
     if sess["sec_idx"] >= len(outline):                     # 各节早已答齐 → 直接收尾（终审幂等）
         yield sse({"type": "phase", "phase": "reviewing"})
@@ -291,35 +294,38 @@ def answer_stream(sid: str, answer: str):
     if not sess:
         yield sse({"type": "error", "message": "会话已过期，请刷新页面重来。"})
         return
-    stub = sess["stub"]
 
+    _require_configuration()
+    if not answer.strip():
+        raise wa.ConfigurationError("请先填写你的回答。")
+    if "pending" not in sess or sess["sec_idx"] >= len(sess["outline"]):
+        raise wa.ConfigurationError("当前没有等待回答的问题，请先确认提纲或重新打开选题。")
     # 记下你这轮的回答（pending 是你正在答的那一「讲+问」）
     lesson, question = _split_pending(sess)
     sess["records"].append({"lesson": lesson, "q": question, "a": answer})
 
 
-    if not stub:
-        _tp = (MAKINGOF_OUT + ".transcript.md") if MAKINGOF_MATERIAL else (
-            _artifact(f"{sess['slug']}.transcript.md") if sess.get("slug") else "")
-        wa.append_transcript(_tp, sess["outline"][sess["sec_idx"]], len(sess["records"]),
-                             lesson, question, answer)
+    _tp = (MAKINGOF_OUT + ".transcript.md") if MAKINGOF_MATERIAL else (
+        _artifact(f"{sess['slug']}.transcript.md") if sess.get("slug") else "")
+    wa.append_transcript(_tp, sess["outline"][sess["sec_idx"]], len(sess["records"]),
+                         lesson, question, answer)
     wa.tutor_feed(sess["messages"], answer)                 # 共用
 
     yield sse({"type": "phase", "phase": "teaching"})       # 导师在听、想下一步
     _stamp(sess)
-    out = tutor_turn(sess["messages"], len(sess["records"]), stub)   # 它自己会记进 messages
+    out = tutor_turn(sess["messages"])   # 它自己会记进 messages
     yield from _warns()
 
     # 双出口：① 导师吐暗号判定掌握（硬约束：没问过至少一轮不许判）② 撞 MAX_ROUNDS 熔断
     if wa.tutor_mastered(out, len(sess["records"])) or len(sess["records"]) >= MAX_ROUNDS:
         s = sess["outline"][sess["sec_idx"]]
-        body = f"## {s['title']}\n\n{gen_body(s, sess['records'], stub)}"     # 编辑串成段
+        body = f"## {s['title']}\n\n{gen_body(s, sess['records'])}"     # 编辑串成段
         yield from _warns()
         sess["parts"].append(body)
-        if MAKINGOF_MATERIAL and not stub:                  # 每完成一节即追加进草稿文件（续跑之锚）
+        if MAKINGOF_MATERIAL:                  # 每完成一节即追加进草稿文件（续跑之锚）
             with open(MAKINGOF_OUT, "a", encoding="utf-8") as f:
                 f.write(body + "\n\n")
-        elif sess.get("slug") and not stub:
+        elif sess.get("slug"):
 
 
             _p = _artifact(f"{sess['slug']}.md")
@@ -350,7 +356,7 @@ def answer_stream(sid: str, answer: str):
 # ── HTTP 接口 ─────────────────────────────────────────────────────────────────
 class StartReq(BaseModel):
     topic: str
-    stub: bool = True
+    model_config = {"extra": "forbid"}
     confirmOutline: bool = True     # 提纲出来先停一下给人看，默认开
 
 
@@ -372,15 +378,16 @@ def _guard_stream(gen):
     try:
         yield from gen
     except Exception as e:                                  # noqa: BLE001
-        traceback.print_exc()                               # 完整栈留给终端
-        yield sse({"type": "error",
-                   "message": f"后端出错：{type(e).__name__}: {e}"})
+        # 保留代码位置，避免将服务商原始响应或个人正文回显到日志和网页。
+        traceback.print_tb(e.__traceback__)
+        print(f"{type(e).__name__}: {wa.public_error(e)}")
+        yield sse({"type": "error", "message": wa.public_error(e)})
         yield sse({"type": "end"})
 
 
 @app.post("/api/start")
 def api_start(req: StartReq):
-    return StreamingResponse(_guard_stream(start_stream(req.topic.strip(), req.stub, req.confirmOutline)),
+    return StreamingResponse(_guard_stream(start_stream(req.topic.strip(), req.confirmOutline)),
                              media_type="text/event-stream", headers=_SSE_HEADERS)
 
 
@@ -410,20 +417,20 @@ def api_begin(req: SessionReq):
 
 @app.post("/api/replan")
 def api_replan(req: SessionReq):
-    """提纲不满意 → 删掉缓存重排一次。**素材不重搜**（那是两分钟真金白银），
+    """提纲不满意 → 根据反馈重排并更新缓存。**素材不重搜**（那是两分钟真金白银），
     只重跑策划那一次调用。"""
     sess, err = _sess_or_err(req.sessionId)
     if err is not None:
         return StreamingResponse(err, media_type="text/event-stream", headers=_SSE_HEADERS)
 
     def gen():
-        cache = _artifact(f"{sess['slug']}.outline.json") if sess.get("slug") else ""
-        if cache and os.path.exists(cache):
-            os.remove(cache)                  # 删掉才会重排，否则 gen_outline 会复用
+        _require_configuration()
+        if sess.get("sec_idx", 0) or sess.get("pending") or sess.get("parts"):
+            raise wa.ConfigurationError("已经开始写作的提纲不能直接重排，请先保存作品并使用新的选题。")
         yield sse({"type": "phase", "phase": "planning"})
         _prev = sess.get("outline")        # 先留住上一版：意见是相对它说的
         outline = sess["outline"] = gen_outline(
-            sess["topic"], sess["material"], sess["stub"], req.feedback, _prev)
+            sess["topic"], sess["material"], req.feedback, _prev)
         sess["sec_idx"] = 0
         sess["parts"] = []
         yield sse({"type": "meta", "sessionId": req.sessionId,
@@ -522,21 +529,26 @@ def api_archive_one(slug: str):
             data["parts"][key] = ""
     head = (data["parts"]["draft"] or "").splitlines()
     data["topic"] = head[0][2:].strip() if head and head[0].startswith("# ") else slug
-    rows = wa.ledger_rows(f"web-{wa.post_key(data['topic'])}")
+    ledger_status, rows = wa.ledger_snapshot(f"web-{wa.post_key(data['topic'])}")
     by = {}
     for r in rows:
         d = by.setdefault(r.get("model") or "（未知）", {"n": 0, "tin": 0, "tout": 0, "cost": 0.0, "ms": 0})
         d["n"] += 1
         d["tin"] += r.get("in") or 0
         d["tout"] += r.get("out") or 0
-        d["cost"] += r.get("cost") or 0
+        if isinstance(r.get("cost"), (int, float)) and not isinstance(r.get("cost"), bool):
+            if d["cost"] is not None:
+                d["cost"] += r["cost"]
+        else:
+            d["cost"] = None
         d["ms"] += r.get("took_ms") or 0
     answers = [x.split("\n\n")[0].strip()
                for x in (data["parts"]["transcript"] or "").split("\n答：")[1:]]
     data["receipt"] = {
+        "ledger_status": ledger_status,
         "source": f"web-{wa.post_key(data['topic'])}",
         "calls": len(rows), "by_model": by,
-        "cost": sum(r.get("cost") or 0 for r in rows),
+        "cost": sum(d["cost"] for d in by.values()) if rows and all(d["cost"] is not None for d in by.values()) else None,
         "ms": sum(r.get("took_ms") or 0 for r in rows),
         "rounds": len(answers), "author_chars": sum(len(a) for a in answers),
     }
@@ -546,6 +558,10 @@ def api_archive_one(slug: str):
 @app.post("/api/critique")
 def api_critique(req: CritiqueReq):
     try:
+        _require_configuration()
+    except wa.ConfigurationError as e:
+        return {"ok": False, "error": str(e)}
+    try:
         draft = req.draft.strip() or _read_local(req.draftPath)
         material = req.material.strip() or (_read_local(req.materialPath) if req.materialPath else "")
     except ValueError as e:
@@ -554,13 +570,17 @@ def api_critique(req: CritiqueReq):
         return {"ok": False, "error": "没有稿子可审：draft 和 draftPath 都是空的。"}
 
     topic, outline = wa.parse_draft_md(draft)
+    try:
+        review = wa.critique(draft, topic=topic, outline=outline, material=material)
+    except Exception as e:
+        return {"ok": False, "error": wa.public_error(e)}
     return {
         "ok": True,
         "topic": topic,
         "sections": [x["title"] for x in outline],
         # basis 由**代码**算，不由模型说——这一行的全部价值就在于它必须准确。
         "basis": wa.critique_basis(draft, topic, outline, material),
-        "review": wa.critique(draft, topic=topic, outline=outline, material=material),
+        "review": review,
     }
 
 

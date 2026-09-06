@@ -38,3 +38,21 @@ jobs:
         run: uv run python _test_hardening_fc.py
       - name: Evaluation tooling and public sample
         run: uv run python _test_eval.py
+      - name: Web startup, configuration and real HTTP flow with test doubles
+        run: uv run python _test_web.py
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build

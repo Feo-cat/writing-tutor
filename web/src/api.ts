@@ -28,7 +28,9 @@ export async function streamPost(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   })
-  if (!resp.ok || !resp.body) throw new Error(`请求失败：${resp.status}`)
+  if (!resp.ok || !resp.body) throw new Error(resp.status === 422
+    ? '请求格式与当前版本不兼容，请刷新页面后再试。'
+    : `后台请求失败：HTTP ${resp.status}`)
 
   const reader = resp.body.getReader()
   const decoder = new TextDecoder()
@@ -49,10 +51,22 @@ export async function streamPost(
 
 export const startSession = (
   topic: string,
-  stub: boolean,
   onEvent: (e: SSEEvent) => void,
   confirmOutline = true,
-) => streamPost('/api/start', { topic, stub, confirmOutline }, onEvent)
+) => streamPost('/api/start', { topic, confirmOutline }, onEvent)
+
+export type ConfigurationStatus = {
+  ready: boolean
+  issues: string[]
+  checks: { label: string; configured: boolean }[]
+  mode: 'learn' | 'makingof'
+}
+
+export const fetchConfiguration = async (): Promise<ConfigurationStatus> => {
+  const r = await fetch('/api/config', { cache: 'no-store' })
+  if (!r.ok) throw new Error(`无法读取配置状态：HTTP ${r.status}`)
+  return r.json()
+}
 
 /** 确认提纲、开始带教。 */
 export const beginSession = (
@@ -89,10 +103,11 @@ export type ArchiveDetail = {
   topic: string
   parts: { material: string; outline: string; transcript: string; draft: string; review: string }
   receipt: {
+    ledger_status: 'not_configured' | 'unavailable' | 'no_records' | 'available'
     source: string
     calls: number
-    by_model: Record<string, { n: number; tin: number; tout: number; cost: number; ms: number }>
-    cost: number
+    by_model: Record<string, { n: number; tin: number; tout: number; cost: number | null; ms: number }>
+    cost: number | null
     ms: number
     rounds: number
     author_chars: number
