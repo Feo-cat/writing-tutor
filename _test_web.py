@@ -27,7 +27,7 @@ class WebTests(unittest.TestCase):
             "LLM_API_KEY", "OPENAI_API_KEY", "LLM_BASE_URL", "LLM_MODEL",
             "MODEL_RAFT", "MODEL_SLOOP", "MODEL_GALLEON", "MODEL_ARK",
             "AUTHOR_PROFILE", "MAKINGOF_MATERIAL", "MAKINGOF_OUT", "GW_LEDGER",
-            "LLM_TEMPERATURE", "LLM_SEED",
+            "LLM_TEMPERATURE", "LLM_SEED", "LLM_MIN_OUTPUT_TOKENS",
         )}
         clean.update(LOCAL_ARTIFACTS_DIR=self.temp.name, TOKEN_PARAM="max_tokens")
         self.env = patch.dict(os.environ, clean)

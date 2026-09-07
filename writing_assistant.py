@@ -50,6 +50,25 @@ class ConfigurationError(ValueError):
     """可以直接展示给用户的配置错误，不包含密钥或服务端原始响应。"""
 
 
+class ModelOutputError(RuntimeError):
+    """有限重试后仍没有完整正文或可执行的工具调用。"""
+
+
+def _minimum_output_tokens() -> int:
+    raw = (os.getenv("LLM_MIN_OUTPUT_TOKENS") or "").strip()
+    try:
+        value = int(raw or "0")
+    except ValueError:
+        value = -1
+    if not 0 <= value <= _CHAT_TOKENS_CAP:
+        raise ConfigurationError("LLM_MIN_OUTPUT_TOKENS 请填写 0 到 CHAT_TOKENS_CAP 范围内的整数；留空或 0 沿用默认预算。")
+    return value
+
+
+def _output_budget(requested: int) -> int:
+    return min(max(requested, _minimum_output_tokens()), _CHAT_TOKENS_CAP)
+
+
 def _api_key() -> str:
     return (os.getenv("LLM_API_KEY") or "").strip() or (os.getenv("OPENAI_API_KEY") or "").strip()
 
@@ -73,6 +92,10 @@ def _provider_issues() -> list[str]:
             issues.append("LLM_BASE_URL 请填写完整的 http/https API 地址，不要在地址中附带密钥。")
     if _TOKEN_PARAM not in ("max_tokens", "max_completion_tokens"):
         issues.append("TOKEN_PARAM 只能填写 max_tokens 或 max_completion_tokens。")
+    try:
+        _minimum_output_tokens()
+    except ConfigurationError as exc:
+        issues.append(str(exc))
     return issues
 
 
@@ -104,6 +127,8 @@ def public_error(exc: Exception) -> str:
     """向网页返回可操作的固定提示，避免回显服务商响应中的密钥或私人正文。"""
     if isinstance(exc, ConfigurationError):
         return str(exc)
+    if isinstance(exc, ModelOutputError):
+        return "模型在有限重试后仍未返回完整正文或有效工具调用。请稍后重试，或检查模型兼容性和输出预算。"
     messages = {
         "AuthenticationError": "模型服务拒绝了密钥，请检查 LLM_API_KEY 并重启后台。",
         "PermissionDeniedError": "当前密钥没有使用此模型的权限，请检查服务商设置。",
@@ -593,6 +618,53 @@ def _web_search(query: str, k: int | None = None) -> str:
     )
 
 
+def _search_queries(tool_calls: list) -> list[str]:
+    """整批参数先校验，避免截断的调用触发搜索或进入下一轮历史。"""
+    queries = []
+    seen_ids = set()
+    for call in tool_calls:
+        if call.type != "function" or call.function.name != "web_search":
+            raise ValueError("Unsupported search tool")
+        if not call.id or call.id in seen_ids:
+            raise ValueError("Invalid tool call ID")
+        seen_ids.add(call.id)
+        args = json.loads(call.function.arguments)
+        query = args.get("query") if isinstance(args, dict) else None
+        if not isinstance(query, str) or not query.strip():
+            raise ValueError("Invalid search query")
+        queries.append(query.strip())
+    return queries
+
+
+def _research_step(messages: list[dict]):
+    """每轮有界重试；失败响应不进历史，完整工具调用才允许执行。"""
+    budget = _output_budget(1500)
+    for attempt in range(_CHAT_RETRY + 1):
+        choice = _create(TIERS["sloop"], messages, budget, tools=SEARCH_TOOL,
+                         no_cache=attempt > 0).choices[0]
+        msg = choice.message
+        content = (msg.content or "").strip()
+        finish = getattr(choice, "finish_reason", None)
+        truncated = finish == "length"
+        queries = []
+        finished = finish in ("stop", None) or (finish == "tool_calls" and bool(msg.tool_calls))
+        valid = finished and bool(content or msg.tool_calls)
+        if valid and msg.tool_calls:
+            try:
+                queries = _search_queries(msg.tool_calls)
+            except (ValueError, TypeError, AttributeError):
+                valid = False
+        if valid:
+            return msg, queries
+        if attempt == _CHAT_RETRY:
+            break
+        previous_budget = budget
+        if truncated or (not content and getattr(msg, "reasoning_content", None)):
+            budget = min(budget * 2, _CHAT_TOKENS_CAP)
+        _warn(f"  ↻ 研究员未返回完整正文或有效搜索调用，token 预算 {previous_budget}→{budget}，重试……")
+    raise ModelOutputError("研究员未返回完整正文或有效搜索调用")
+
+
 def research_topic(topic: str) -> str:
     """研究员（手写 client-side ReAct 检索循环）：
     模型决定搜什么 → 我的代码调 ddgs → 把结果塞回 → while 到模型不再要搜、给出简报。
@@ -602,17 +674,10 @@ def research_topic(topic: str) -> str:
         {"role": "user", "content": f"选题：{topic}\n请先上网查证（可多次搜索），再给我一份素材简报。"},
     ]
     for _ in range(RESEARCH_MAX_ROUNDS):
-        _choice = _create(TIERS["sloop"], messages, 1500, tools=SEARCH_TOOL).choices[0]
-        # 带 tools 的这次不能用 _guarded_text（它只管纯文本），但截断必须留痕：
-        # tool_calls 的 arguments 被砍断就是一段非法 JSON，下面 json.loads 会回落成拿选题去搜，
-        # 那时看到的现象是「它搜的词莫名其妙」，而真凶在这里。
-        if getattr(_choice, "finish_reason", None) == "length":
-            print("  ⚠ 研究员这轮被 max_tokens 截断（1500）——工具参数可能不完整")
-        msg = _choice.message
+        msg, queries = _research_step(messages)
         if not msg.tool_calls:                    # 模型不再要搜 → 它这轮给的就是最终简报
             return (msg.content or "").strip()
-        # 把这轮 assistant（含 tool_calls）原样入历史，再逐个执行工具、把结果塞回去
-        messages.append({
+        assistant = {
             "role": "assistant",
             "content": msg.content or "",
             "tool_calls": [
@@ -620,12 +685,14 @@ def research_topic(topic: str) -> str:
                  "function": {"name": tc.function.name, "arguments": tc.function.arguments}}
                 for tc in msg.tool_calls
             ],
-        })
-        for tc in msg.tool_calls:
-            try:
-                query = json.loads(tc.function.arguments or "{}").get("query", topic)
-            except json.JSONDecodeError:
-                query = topic
+        }
+        # DeepSeek 思考模式要求工具调用历史保留此字段（包括空字符串）。
+        # 不添加服务商未返回的字段，也不把思考内容当简报、正文或日志输出。
+        reasoning = getattr(msg, "reasoning_content", None)
+        if isinstance(reasoning, str):
+            assistant["reasoning_content"] = reasoning
+        messages.append(assistant)
+        for tc, query in zip(msg.tool_calls, queries):
             print(f"🔎 研究员搜索：{query}")
             messages.append({"role": "tool", "tool_call_id": tc.id, "content": _web_search(query)})
     # 撞熔断：不再给 tools，逼它用手头信息直接收尾（防它无限想搜）
@@ -783,47 +850,23 @@ TUTOR_RETRY = int(os.getenv("TUTOR_RETRY", "2"))  # 导师某轮退化（空 / �
 
 
 def _guarded_text(msgs: list[dict], model: str, max_tokens: int, who: str = "模型") -> str:
-    """纯文本调用守卫：空输出重试，截断时增加预算，重试绕过网关缓存。"""
-    content = ""
+    """仅交付完整正文；思考内容不作为结果，重试和输出预算都有上限。"""
+    max_tokens = _output_budget(max_tokens)
     for attempt in range(_CHAT_RETRY + 1):
-        # attempt>0 ＝ 这是重抽：必须绕开缓存，否则拿回的还是刚才那个坏响应。
         choice = _create(model, msgs, max_tokens, no_cache=attempt > 0).choices[0]
         content = (choice.message.content or "").strip()
-        truncated = getattr(choice, "finish_reason", None) == "length"
-        if not content:
-            # 空的时候必须报告「那这些 token 去哪了」。推理型模型会把话全说进
-            # reasoning_content，content 一直是空——那样翻多少倍预算都没用，
-            # 修法和「预算不够」完全相反。**「我没看到内容」不等于「模型没输出」。**
-            _rc = getattr(choice.message, "reasoning_content", None) or ""
-            _keys = sorted(k for k in vars(choice.message)) if hasattr(choice.message, "__dict__") else []
-            print(f"     ↳ 空输出诊断：finish_reason={getattr(choice, 'finish_reason', None)!r}"
-                  f"  reasoning_content={len(_rc)} 字"
-                  + (f"  字段={_keys}" if _keys else ""))
+        finish = getattr(choice, "finish_reason", None)
+        truncated = finish == "length"
+        if content and finish in ("stop", None) and not getattr(choice.message, "tool_calls", None):
+            return content
         if attempt == _CHAT_RETRY:
-            # 重试用尽。content 仍空但推理里有货 → **降级交付，不静默返回空**。
-            # 同 edit_section 那条回落（编辑吐空就拼作者原话）：宁可给一个标记过的
-            # 降级产物，也不要让上游拿到一个「什么都没发生」的空字符串。
-            if not content:
-                _rc = (getattr(choice.message, "reasoning_content", None) or "").strip()
-                if _rc:
-                    _warn(f"  ⚠ {who}正文始终为空，降级交付推理草稿（{len(_rc)} 字）")
-                    return ("〔⚠ 降级产物：这是模型的**推理草稿**，不是成品。\n"
-                            "  它在推理阶段就耗尽了输出预算，正文一个字都没写出来。\n"
-                            "  下面的内容格式不受控，请当草稿看。〕\n\n" + _rc)
-            break                                    # 用手头这份
-        if truncated:
-
-
-            bumped = min(max_tokens * 2, _CHAT_TOKENS_CAP)
-            why = "输出为空且撞顶（预算全烧在推理上？）" if not content else "输出被截断（length）"
-            _warn(f"  ↻ {who}{why}，token 预算 {max_tokens}→{bumped} 重来……")
-            max_tokens = bumped
-            continue
-        if not content:                              # 纯空（没撞顶）→ 绕开缓存重来
-            _warn(f"  ↻ {who}返回空，重抽（绕开缓存）……")
-            continue
-        break                                        # 非空、未截断 → 收
-    return content
+            break
+        previous_budget = max_tokens
+        if truncated or (not content and getattr(choice.message, "reasoning_content", None)):
+            max_tokens = min(max_tokens * 2, _CHAT_TOKENS_CAP)
+        why = "正文被截断" if truncated else "未返回可用正文"
+        _warn(f"  ↻ {who}{why}，token 预算 {previous_budget}→{max_tokens}，重试……")
+    raise ModelOutputError(f"{who}未返回完整正文")
 
 
 def _ask(model: str, system: str, messages: list[dict], max_tokens: int = 3200) -> str:
@@ -1017,11 +1060,17 @@ def edit_section(section: dict, records: list[dict]) -> str:
     )
 
 
-    body = _chat(TIERS["galleon"], EDITOR_SYS, f"节标题：{section['title']}\n\n{log}", max_tokens=2000)
+    try:
+        body = _chat(TIERS["galleon"], EDITOR_SYS, f"节标题：{section['title']}\n\n{log}", max_tokens=2000)
+    except ModelOutputError:
+        body = ""
     # 硬约束：prompt 劝它别加标题，但模型偶尔不听 → 代码里把 # 开头的行直接砍掉，防重复
     body = "\n".join(ln for ln in body.splitlines() if not ln.lstrip().startswith("#")).strip()
     if not body:
+        _warn("  ⚠ 编辑未返回可用正文，已保留作者原回答。")
         body = "\n\n".join(r["a"] for r in records if r.get("a", "").strip())
+        if not body:
+            raise ModelOutputError("编辑没有可交付的正文或作者原回答")
     return body
 
 

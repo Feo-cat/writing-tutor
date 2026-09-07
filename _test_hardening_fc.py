@@ -21,6 +21,7 @@ sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "_stubs
 os.environ["LLM_API_KEY"] = "test-only-key"
 os.environ["LLM_BASE_URL"] = "https://model.example.test/v1"
 os.environ["TOKEN_PARAM"] = "max_tokens"
+os.environ["LLM_MIN_OUTPUT_TOKENS"] = "0"
 os.environ.setdefault("LLM_MODEL", "stub-model")   # 让 TIERS 能建起来
 os.environ.pop("LLM_TEMPERATURE", None)            # 采样参数测试要求初始干净
 os.environ.pop("LLM_SEED", None)

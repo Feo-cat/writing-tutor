@@ -7,6 +7,7 @@ FORCE_STUB_FASTAPI=1 uv run --locked python _test_hardening.py
 uv run --locked python _test_hardening_fc.py
 uv run --locked python _test_eval.py
 uv run --locked python _test_web.py
+uv run --locked python _test_reasoning.py
 (
   cd web
   npm run lint

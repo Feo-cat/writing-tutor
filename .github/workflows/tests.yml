@@ -40,6 +40,8 @@ jobs:
         run: uv run python _test_eval.py
       - name: Web startup, configuration and real HTTP flow with test doubles
         run: uv run python _test_web.py
+      - name: Reasoning model compatibility with real SDK and simulated HTTP
+        run: uv run python _test_reasoning.py
   frontend:
     runs-on: ubuntu-latest
     timeout-minutes: 10
