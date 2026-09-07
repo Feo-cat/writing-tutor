@@ -29,12 +29,10 @@ function Typewriter({ text, onDone }: { text: string; onDone?: () => void }) {
   const [n, setN] = useState(0)
   const done = useRef(false)
   const onDoneRef = useRef(onDone)
-  onDoneRef.current = onDone
 
   useEffect(() => {
-    setN(0)
-    done.current = false
-  }, [text])
+    onDoneRef.current = onDone
+  }, [onDone])
 
   useEffect(() => {
     if (n >= text.length) {
@@ -653,7 +651,7 @@ export default function App() {
                 <div className="msg-tutor">
                   <div className="avatar"><TutorAvatar /></div>
                   <div className="tutor-body">
-                    <Typewriter text={current.lesson} onDone={() => setTypingDone(true)} />
+                    <Typewriter key={current.lesson} text={current.lesson} onDone={() => setTypingDone(true)} />
                     {typingDone && (
                       <motion.div className="question" initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}>
                         {current.question}
