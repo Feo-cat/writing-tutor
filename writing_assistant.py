@@ -6,6 +6,7 @@ import json
 import os
 import re
 import sys
+import time
 from html.parser import HTMLParser
 from urllib.parse import urlparse
 
@@ -123,12 +124,37 @@ def _get_client() -> OpenAI:
     return client
 
 
+def _timeout_stage(exc: BaseException) -> str:
+    """仅识别异常类型，不读取可能包含密钥、地址或正文的异常消息。"""
+    stages = ((httpx.ConnectTimeout, "connect"), (httpx.ReadTimeout, "read"),
+              (httpx.WriteTimeout, "write"), (httpx.PoolTimeout, "pool"))
+    current = exc
+    seen = set()
+    for _ in range(6):
+        if not isinstance(current, BaseException) or id(current) in seen:
+            break
+        seen.add(id(current))
+        for exception_type, stage in stages:
+            if isinstance(current, exception_type):
+                return stage
+        current = current.__cause__
+    return "unknown"
+
+
 def public_error(exc: Exception) -> str:
     """向网页返回可操作的固定提示，避免回显服务商响应中的密钥或私人正文。"""
     if isinstance(exc, ConfigurationError):
         return str(exc)
     if isinstance(exc, ModelOutputError):
         return "模型在有限重试后仍未返回完整正文或有效工具调用。请稍后重试，或检查模型兼容性和输出预算。"
+    if type(exc).__name__ == "APITimeoutError":
+        return {
+            "connect": "连接模型服务超时。请检查本机网络或代理连接后重试。",
+            "read": "等待模型服务返回数据超时。可能是服务响应较慢或连接中断，请稍后重试。",
+            "write": "向模型服务发送请求超时。请检查网络或代理连接后重试。",
+            "pool": "等待本机可用连接超时。请等待当前任务结束，必要时重启后台。",
+            "unknown": "模型请求超时，尚未确定超时环节。请反馈终端中的调用耗时和超时阶段。",
+        }[_timeout_stage(exc)]
     messages = {
         "AuthenticationError": "模型服务拒绝了密钥，请检查 LLM_API_KEY 并重启后台。",
         "PermissionDeniedError": "当前密钥没有使用此模型的权限，请检查服务商设置。",
@@ -136,7 +162,6 @@ def public_error(exc: Exception) -> str:
         "BadRequestError": "模型服务不接受本次请求。研究模型需支持工具调用；请检查模型协议与 TOKEN_PARAM。",
         "RateLimitError": "模型服务暂时限流或额度不足，请查看服务商账户状态后再试。",
         "APIConnectionError": "无法连接模型服务，请检查网络与 LLM_BASE_URL。",
-        "APITimeoutError": "模型服务响应超时，请稍后再试。",
     }
     if type(exc).__name__ in messages:
         return messages[type(exc).__name__]
@@ -301,6 +326,22 @@ def ledger_rows(src: str, path: str = "") -> list[dict]:
     return ledger_snapshot(src, path)[1]
 
 
+def _request_settings(sdk) -> str:
+    """记录当前 SDK 的数字设置；不改超时、重试次数或请求内容。"""
+    settings = []
+    timeout = getattr(sdk, "timeout", None)
+    if isinstance(timeout, httpx.Timeout):
+        for key, value in timeout.as_dict().items():
+            if value is None:
+                settings.append(f"{key}=不限")
+            elif isinstance(value, (int, float)):
+                settings.append(f"{key}={value:g}秒")
+    retries = getattr(sdk, "max_retries", None)
+    if isinstance(retries, int):
+        settings.append(f"SDK重试上限={retries}")
+    return "，".join(settings) or "SDK等待设置未知"
+
+
 def _create(model: str, messages: list[dict], max_tokens: int, tools: list | None = None,
             no_cache: bool = False, response_format: dict | None = None):
     """所有 LLM 调用的唯一出口：把 token 上限参数名收敛到一处，顺带可选 tools + 采样参数。
@@ -328,14 +369,26 @@ def _create(model: str, messages: list[dict], max_tokens: int, tools: list | Non
     # 先看 SDK 给不给响应头，再决定走哪条路——**不用 try/except 去试**：
     # 真调用抛出来的异常要是被这里吞掉再走一遍普通 create，那就是同一个问题收两次钱。
     raw = getattr(sdk.chat.completions, "with_raw_response", None) if _GW_HEADERS_ON else None
-    if raw is not None:
-        resp = raw.create(**kw)
-        _gw_note(model, getattr(resp, "headers", None))
-        parse = getattr(resp, "parse", None)
-        return parse() if callable(parse) else resp
-
-    _gw_note(model, None)   # 拿不到头也要留一条：记录的是「查不了」，不是「没降级」
-    return sdk.chat.completions.create(**kw)
+    kind = "工具决策" if tools else "文本生成"
+    print(f"[模型调用] {kind} 开始；{_request_settings(sdk)}", flush=True)
+    started = time.perf_counter()
+    try:
+        if raw is not None:
+            resp = raw.create(**kw)
+            _gw_note(model, getattr(resp, "headers", None))
+            parse = getattr(resp, "parse", None)
+            result = parse() if callable(parse) else resp
+        else:
+            _gw_note(model, None)   # 没读到网关头，记录为未知。
+            result = sdk.chat.completions.create(**kw)
+    except Exception as exc:
+        # 只补诊断再原样抛出；不再次调用、切换模型或输出服务商原始异常。
+        stage = _timeout_stage(exc)
+        print(f"[模型调用] {kind} 失败；耗时={time.perf_counter() - started:.1f}秒；"
+              f"类型={type(exc).__name__}；超时阶段={stage}", flush=True)
+        raise
+    print(f"[模型调用] {kind} 完成；耗时={time.perf_counter() - started:.1f}秒", flush=True)
+    return result
 
 
 _DEFAULT_MODEL = (os.getenv("LLM_MODEL") or "").strip()
@@ -608,10 +661,13 @@ def _web_search(query: str, k: int | None = None) -> str:
             # 先多取一些再排来源质量；否则官方文档在第 k+1 位时永远没有入选机会。
             hits = list(ddgs.text(query, max_results=min(k * fetch_multiplier, 20)))
     except Exception as e:                        # 搜索供应商偶发限流：吞掉，让模型换词重试
+        print("  检索失败，已将失败状态交给研究员。", flush=True)
         return f"[搜索失败：{e}。换个查询词，或就用已有信息作答。]"
     if not hits:
+        print("  检索完成：未找到结果。", flush=True)
         return "[没搜到结果，换个更宽泛的查询词试试。]"
     hits = _rank_search_hits(hits)[:k]
+    print(f"  检索完成：返回 {len(hits)} 条结果。", flush=True)
     return "\n\n".join(
         f"【{_SOURCE_LABELS[_source_class(h.get('href', ''))]}】"
         f"[{h.get('title', '')}]({h.get('href', '')})\n{h.get('body', '')}" for h in hits
@@ -673,7 +729,8 @@ def research_topic(topic: str) -> str:
         {"role": "system", "content": RESEARCHER_SYS},
         {"role": "user", "content": f"选题：{topic}\n请先上网查证（可多次搜索），再给我一份素材简报。"},
     ]
-    for _ in range(RESEARCH_MAX_ROUNDS):
+    for round_index in range(RESEARCH_MAX_ROUNDS):
+        print(f"[研究员] 第 {round_index + 1}/{RESEARCH_MAX_ROUNDS} 轮：等待模型决定下一步。", flush=True)
         msg, queries = _research_step(messages)
         if not msg.tool_calls:                    # 模型不再要搜 → 它这轮给的就是最终简报
             return (msg.content or "").strip()
@@ -696,6 +753,7 @@ def research_topic(topic: str) -> str:
             print(f"🔎 研究员搜索：{query}")
             messages.append({"role": "tool", "tool_call_id": tc.id, "content": _web_search(query)})
     # 撞熔断：不再给 tools，逼它用手头信息直接收尾（防它无限想搜）
+    print("[研究员] 搜索决策轮数已达上限，等待模型整理素材简报。", flush=True)
     messages.append({"role": "user", "content": "别再搜了，就用上面已有的信息，现在直接给出素材简报。"})
 
 

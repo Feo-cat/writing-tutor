@@ -84,7 +84,10 @@ class ReasoningTests(unittest.TestCase):
             self.requests.append(json.loads(request.content))
             self.headers.append(request.headers)
             self.assertTrue(pending, "More model calls than the fixture allows")
-            return httpx.Response(200, json=pending.pop(0))
+            item = pending.pop(0)
+            if isinstance(item, Exception):
+                raise item
+            return httpx.Response(200, json=item)
 
         self.wa.client = openai.OpenAI(
             api_key="test-only-key", base_url="https://model.example.test/v1", max_retries=0,
@@ -228,6 +231,71 @@ class ReasoningTests(unittest.TestCase):
             os.environ["LLM_MIN_OUTPUT_TOKENS"] = value
             self.assertTrue(self.wa.configuration_status()["ready"])
         self.assertEqual(self.requests, [])
+
+    def test_transport_timeout_classification_preserves_cause_without_extra_calls(self):
+        cases = ((httpx.ConnectTimeout, "connect", "连接模型服务超时"),
+                 (httpx.ReadTimeout, "read", "等待模型服务返回数据超时"),
+                 (httpx.WriteTimeout, "write", "发送请求超时"),
+                 (httpx.PoolTimeout, "pool", "等待本机可用连接超时"))
+        marker = "PRIVATE-TRANSPORT-ERROR-FIXTURE"
+        for raw in (True, False):
+            for error_type, stage, message in cases:
+                with self.subTest(raw=raw, stage=stage):
+                    self.wa._GW_HEADERS_ON = raw
+                    error = error_type(marker)
+                    self.use_responses(error)
+                    settings = self.wa.client.timeout.as_dict()
+                    with self.assertRaises(openai.APITimeoutError) as caught:
+                        self.text()
+                    self.assertIs(caught.exception.__cause__, error)
+                    self.assertEqual(len(self.requests), 1)
+                    self.assertEqual(self.wa.client.timeout.as_dict(), settings)
+                    self.assertEqual(self.wa.client.max_retries, 0)
+                    self.assertIn(message, self.wa.public_error(caught.exception))
+                    self.assertIn(f"超时阶段={stage}", self.output.getvalue())
+                    self.assertIn("耗时=", self.output.getvalue())
+                    self.assertIn("SDK重试上限=0", self.output.getvalue())
+                    self.assertNotIn(marker, self.output.getvalue() + self.wa.public_error(caught.exception))
+                    self.assertNotIn("model.example.test", self.output.getvalue())
+
+    def test_sdk_can_recover_without_an_extra_application_retry(self):
+        self.use_responses(httpx.ConnectTimeout("Fixture connection failure"), response("Recovered body"))
+        self.wa.client.max_retries = 1
+        self.assertEqual(self.text(), "Recovered body")
+        self.assertEqual(len(self.requests), 2)
+        self.assertEqual(self.requests[0], self.requests[1])
+        self.assertEqual(self.output.getvalue().count("文本生成 开始"), 1)
+        self.assertEqual(self.output.getvalue().count("文本生成 完成"), 1)
+        self.assertNotIn("文本生成 失败", self.output.getvalue())
+
+    def test_unknown_timeout_does_not_guess_from_sensitive_error_text(self):
+        error = openai.APITimeoutError(request=httpx.Request("POST", "https://model.example.test"))
+        cause = RuntimeError("ReadTimeout private-provider-response")
+        error.__cause__ = cause
+        cause.__cause__ = cause
+        self.assertEqual(self.wa._timeout_stage(error), "unknown")
+        message = self.wa.public_error(error)
+        self.assertIn("尚未确定超时环节", message)
+        self.assertNotIn("private-provider-response", message)
+
+    def test_web_timeout_after_search_keeps_diagnostics_and_stops_cleanly(self):
+        marker = "PRIVATE-READ-ERROR-FIXTURE"
+        self.use_responses(response(reasoning=THOUGHT, calls=[tool()]), httpx.ReadTimeout(marker))
+        server = importlib.import_module("server")
+        with TestClient(server.app) as client, patch.object(self.wa, "plan_outline") as planner:
+            result = client.post("/api/start", json={"topic": "Test research timeout"})
+            events = [json.loads(line[6:]) for line in result.text.splitlines() if line.startswith("data: ")]
+            self.assertEqual(events[-1]["type"], "end")
+            self.assertIn("等待模型服务返回数据超时", next(e["message"] for e in events if e["type"] == "error"))
+            planner.assert_not_called()
+            self.assertEqual(client.get("/api/archive").json(), {"posts": []})
+        self.search.assert_called_once_with("test query")
+        self.assertEqual(len(self.requests), 2)
+        self.assertEqual(list(Path(self.temp.name).rglob("*.md")), [])
+        self.assertIn("第 2/4 轮", self.output.getvalue())
+        self.assertIn("超时阶段=read", self.output.getvalue())
+        self.assertNotIn(marker, result.text + self.output.getvalue())
+        self.assertNotIn(THOUGHT.strip(), result.text + self.output.getvalue())
 
     def test_failed_research_is_visible_on_web_and_does_not_save_material(self):
         failed = response(reasoning=THOUGHT, finish="length")
