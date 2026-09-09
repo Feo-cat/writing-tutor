@@ -70,6 +70,20 @@ def _output_budget(requested: int) -> int:
     return min(max(requested, _minimum_output_tokens()), _CHAT_TOKENS_CAP)
 
 
+def _connect_timeout() -> float | None:
+    """只覆盖建连等待；留空时保留 SDK 默认设置。"""
+    raw = (os.getenv("LLM_CONNECT_TIMEOUT_SECONDS") or "").strip()
+    if not raw:
+        return None
+    try:
+        value = float(raw)
+    except ValueError:
+        value = 0.0
+    if not 1 <= value <= 120:
+        raise ConfigurationError("LLM_CONNECT_TIMEOUT_SECONDS 请填写 1 到 120 之间的秒数；留空使用 SDK 默认值。")
+    return value
+
+
 def _api_key() -> str:
     return (os.getenv("LLM_API_KEY") or "").strip() or (os.getenv("OPENAI_API_KEY") or "").strip()
 
@@ -93,10 +107,11 @@ def _provider_issues() -> list[str]:
             issues.append("LLM_BASE_URL 请填写完整的 http/https API 地址，不要在地址中附带密钥。")
     if _TOKEN_PARAM not in ("max_tokens", "max_completion_tokens"):
         issues.append("TOKEN_PARAM 只能填写 max_tokens 或 max_completion_tokens。")
-    try:
-        _minimum_output_tokens()
-    except ConfigurationError as exc:
-        issues.append(str(exc))
+    for check in (_minimum_output_tokens, _connect_timeout):
+        try:
+            check()
+        except ConfigurationError as exc:
+            issues.append(str(exc))
     return issues
 
 
@@ -326,10 +341,11 @@ def ledger_rows(src: str, path: str = "") -> list[dict]:
     return ledger_snapshot(src, path)[1]
 
 
-def _request_settings(sdk) -> str:
-    """记录当前 SDK 的数字设置；不改超时、重试次数或请求内容。"""
+def _request_settings(sdk, timeout=None) -> str:
+    """记录本次请求实际使用的等待设置和 SDK 内部重试上限。"""
     settings = []
-    timeout = getattr(sdk, "timeout", None)
+    if timeout is None:
+        timeout = getattr(sdk, "timeout", None)
     if isinstance(timeout, httpx.Timeout):
         for key, value in timeout.as_dict().items():
             if value is None:
@@ -350,6 +366,12 @@ def _create(model: str, messages: list[dict], max_tokens: int, tools: list | Non
         raise ConfigurationError("此步骤尚未配置模型，请填写 LLM_MODEL 或对应的 MODEL_* 后重启后台。")
     sdk = _get_client()
     kw = {"model": model, "messages": messages, _TOKEN_PARAM: max_tokens, **_sampling()}
+    connect_timeout = _connect_timeout()
+    if connect_timeout is not None:
+        # 复制 SDK 的配置，只改 connect；read/write/pool 和重试设置原样保留。
+        timeout = httpx.Timeout(sdk.timeout)
+        timeout.connect = connect_timeout
+        kw["timeout"] = timeout
     if tools:
         kw["tools"] = tools
     if response_format:
@@ -370,7 +392,7 @@ def _create(model: str, messages: list[dict], max_tokens: int, tools: list | Non
     # 真调用抛出来的异常要是被这里吞掉再走一遍普通 create，那就是同一个问题收两次钱。
     raw = getattr(sdk.chat.completions, "with_raw_response", None) if _GW_HEADERS_ON else None
     kind = "工具决策" if tools else "文本生成"
-    print(f"[模型调用] {kind} 开始；{_request_settings(sdk)}", flush=True)
+    print(f"[模型调用] {kind} 开始；{_request_settings(sdk, kw.get('timeout'))}", flush=True)
     started = time.perf_counter()
     try:
         if raw is not None:

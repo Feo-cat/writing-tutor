@@ -49,6 +49,7 @@ class ReasoningTests(unittest.TestCase):
             "OPENAI_API_KEY", "MODEL_RAFT", "MODEL_SLOOP", "MODEL_GALLEON", "MODEL_ARK",
             "AUTHOR_PROFILE", "MAKINGOF_MATERIAL", "MAKINGOF_OUT", "GW_LEDGER",
             "GW_CACHE", "GW_SOURCE", "LLM_TEMPERATURE", "LLM_SEED",
+            "LLM_CONNECT_TIMEOUT_SECONDS",
         )}
         clean.update(LLM_API_KEY="test-only-key", LLM_BASE_URL="https://model.example.test/v1",
                      LLM_MODEL="deepseek-v4-pro", TOKEN_PARAM="max_tokens",
@@ -78,11 +79,13 @@ class ReasoningTests(unittest.TestCase):
         pending = list(responses)
         self.requests = []
         self.headers = []
+        self.timeouts = []
 
         def handle(request):
             self.assertEqual(str(request.url), "https://model.example.test/v1/chat/completions")
             self.requests.append(json.loads(request.content))
             self.headers.append(request.headers)
+            self.timeouts.append(dict(request.extensions.get("timeout", {})))
             self.assertTrue(pending, "More model calls than the fixture allows")
             item = pending.pop(0)
             if isinstance(item, Exception):
@@ -232,6 +235,51 @@ class ReasoningTests(unittest.TestCase):
             self.assertTrue(self.wa.configuration_status()["ready"])
         self.assertEqual(self.requests, [])
 
+    def test_connect_timeout_reaches_transport_and_preserves_other_settings(self):
+        for raw in (True, False):
+            for value in ("", "20", "12.5"):
+                with self.subTest(raw=raw, value=value):
+                    self.output.seek(0)
+                    self.output.truncate(0)
+                    self.wa._GW_HEADERS_ON = raw
+                    os.environ["LLM_CONNECT_TIMEOUT_SECONDS"] = value
+                    self.use_responses(response("Complete body"))
+                    # 使用不同的等待值，防止实现直接把其他阶段硬编码成 600 秒。
+                    self.wa.client.timeout = httpx.Timeout(connect=3, read=123, write=45, pool=67)
+                    original = self.wa.client.timeout.as_dict()
+                    self.assertEqual(self.text(), "Complete body")
+                    expected = dict(original, connect=float(value) if value else 3)
+                    self.assertEqual(self.timeouts, [expected])
+                    self.assertEqual(self.wa.client.timeout.as_dict(), original)
+                    self.assertEqual(self.wa.client.max_retries, 0)
+                    self.assertNotIn("timeout", self.requests[0])
+                    self.assertIn(f"connect={expected['connect']:g}秒", self.output.getvalue())
+                    self.assertIn("read=123秒", self.output.getvalue())
+
+    def test_invalid_connect_timeout_blocks_web_and_sdk_construction(self):
+        server = importlib.import_module("server")
+        with TestClient(server.app) as client, \
+             patch.object(self.wa, "OpenAI", side_effect=AssertionError("Unexpected SDK construction")) as factory:
+            for value in ("0", "-1", "0.5", "121", "nan", "inf", "PRIVATE-CONFIG-FIXTURE"):
+                with self.subTest(value=value):
+                    os.environ["LLM_CONNECT_TIMEOUT_SECONDS"] = value
+                    config = client.get("/api/config")
+                    self.assertFalse(config.json()["ready"])
+                    self.assertIn("LLM_CONNECT_TIMEOUT_SECONDS", config.text)
+                    self.assertNotIn("PRIVATE-CONFIG-FIXTURE", config.text)
+                    with self.assertRaises(self.wa.ConfigurationError):
+                        self.wa._get_client()
+                    result = client.post("/api/start", json={"topic": "Invalid connection setting"})
+                    events = [json.loads(line[6:]) for line in result.text.splitlines() if line.startswith("data: ")]
+                    self.assertEqual([e["type"] for e in events], ["error", "end"])
+                    self.assertNotIn("PRIVATE-CONFIG-FIXTURE", result.text + self.output.getvalue())
+                    self.assertEqual(server.SESSIONS, {})
+            for value in ("", "1", "120"):
+                os.environ["LLM_CONNECT_TIMEOUT_SECONDS"] = value
+                self.assertTrue(client.get("/api/config").json()["ready"])
+            factory.assert_not_called()
+        self.search.assert_not_called()
+
     def test_transport_timeout_classification_preserves_cause_without_extra_calls(self):
         cases = ((httpx.ConnectTimeout, "connect", "连接模型服务超时"),
                  (httpx.ReadTimeout, "read", "等待模型服务返回数据超时"),
@@ -259,11 +307,13 @@ class ReasoningTests(unittest.TestCase):
                     self.assertNotIn("model.example.test", self.output.getvalue())
 
     def test_sdk_can_recover_without_an_extra_application_retry(self):
+        os.environ["LLM_CONNECT_TIMEOUT_SECONDS"] = "20"
         self.use_responses(httpx.ConnectTimeout("Fixture connection failure"), response("Recovered body"))
         self.wa.client.max_retries = 1
         self.assertEqual(self.text(), "Recovered body")
         self.assertEqual(len(self.requests), 2)
         self.assertEqual(self.requests[0], self.requests[1])
+        self.assertEqual([t["connect"] for t in self.timeouts], [20, 20])
         self.assertEqual(self.output.getvalue().count("文本生成 开始"), 1)
         self.assertEqual(self.output.getvalue().count("文本生成 完成"), 1)
         self.assertNotIn("文本生成 失败", self.output.getvalue())

@@ -21,6 +21,7 @@ os.environ["LLM_API_KEY"] = "test-only-key"
 os.environ["LLM_BASE_URL"] = "https://model.example.test/v1"
 os.environ["TOKEN_PARAM"] = "max_tokens"
 os.environ["LLM_MIN_OUTPUT_TOKENS"] = "0"
+os.environ["LLM_CONNECT_TIMEOUT_SECONDS"] = ""
 os.environ.setdefault("LLM_MODEL", "stub-model")   # 让 TIERS 能建起来
 os.environ["TUTOR_RETRY"] = "2"
 
