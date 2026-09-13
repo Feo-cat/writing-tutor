@@ -177,6 +177,6 @@ uv run --locked uvicorn server:app --host 127.0.0.1 --port 8000
 
 安装依赖后，在 macOS / Linux 项目根目录执行 `bash verify.sh`，运行 Python 检查及前端 lint/build。检查使用模拟模型或 HTTP 响应，不调用真实模型和搜索，也不能代替真实流程验收。
 
-目前 GitHub 自动检查已通过；Mac 已验证安装、无配置首页和 DeepSeek 大纲生成，完整写作、保存、下载尚待集中验收。Windows / Linux 完整使用流程尚未实测。项目许可待发布前确认，当前未添加许可证。
+GitHub 自动检查已有通过记录。2026-09-13，维护者反馈 Mac 配合 DeepSeek 的完整写作流程正常，测试选题为“世界模型”；详细证据与待补充的版本记录见 [迁移记录](docs/migration.md#运行验证记录)。Windows / Linux 完整使用流程尚未实测。项目许可待发布前确认，当前未添加许可证。
 
-进一步阅读：[Mac 验收](docs/mac-validation.md)、[目录与迁移记录](docs/migration.md)、[评测工具](docs/evaluation.md)。
+进一步阅读：[Mac 验收](docs/mac-validation.md)、[目录与迁移记录](docs/migration.md)、[评测工具](docs/evaluation.md)、[第三方声明](THIRD_PARTY_NOTICES.md)。
