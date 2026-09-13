@@ -2,7 +2,7 @@
 
 输入选题，研究员搜索资料、策划生成提纲，导师逐节先讲再问，编辑把你的回答整理成初稿，终审给出修改建议。保留你的表达和真实经历，终审不替你改写正文。
 
-这是本地单用户 Web 程序，无需网关。程序与作品保存在本机；写作时会将所需素材和回答发送给模型服务，并通过 DDGS 联网搜索，可能产生费用。当前只适配 **OpenAI Chat Completions 兼容接口**，研究模型必须支持工具调用；不提供独立 CLI、MCP、论文雷达或假数据模式。
+这是本地单用户 Web 程序。程序与作品保存在本机；写作时会将所需素材和回答发送给模型服务，并通过 DDGS 联网搜索，可能产生费用。支持 **OpenAI Chat Completions 兼容接口**，研究模型需要支持工具调用。
 
 ## 部署
 
@@ -15,7 +15,7 @@ git clone https://github.com/Feo-cat/writing-tutor.git
 cd writing-tutor
 ```
 
-仓库准备期间为私密，需要 GitHub 访问权限。以下命令从项目根目录开始，按顺序执行，某步失败时先处理报错再继续。
+以下命令从项目根目录开始，按顺序执行，某步失败时先处理报错再继续。
 
 ### 2. 安装依赖并构建网页
 
@@ -115,7 +115,7 @@ Windows PowerShell：
 | `MAKINGOF_OUT` | 复盘稿路径，默认是产物目录下的 `blogs/draft-makingof.md` |
 | `GW_LEDGER` | 可选的兼容网关账本路径；留空显示“未接入费用记录”，不影响写作 |
 
-角色模型共用同一个 API 地址和密钥，当前不能为两组分别配置不同服务商。`MODEL_RAFT`、`MODEL_ARK` 不用于 Web 主流程，保持空白即可。
+角色模型共用同一个 API 地址和密钥，当前不能为两组分别配置不同服务商。
 
 作者背景示例：
 
@@ -173,14 +173,14 @@ uv run --locked uvicorn server:app --host 127.0.0.1 --port 8000
 
 8000 端口被占用时，可将上述命令的端口改为 `8001`，并访问对应地址。更多超时诊断见 [DeepSeek 说明](docs/deepseek.md#4-超时如何反馈)。反馈错误时附操作系统、失败步骤、错误行和 `git rev-parse HEAD` 输出，不要附密钥或私人正文。
 
-## 开发与验证状态
+## 开发
 
 安装依赖后，在 macOS / Linux 项目根目录执行 `bash verify.sh`，运行 Python 检查及前端 lint/build。检查使用模拟模型或 HTTP 响应，不调用真实模型和搜索，也不能代替真实流程验收。
 
-GitHub 自动检查已有通过记录。2026-09-13，维护者反馈 Mac 配合 DeepSeek 的完整写作流程正常，测试选题为“世界模型”；详细证据及版本记录的限制见 [迁移记录](docs/migration.md#运行验证记录)。Windows / Linux 完整使用流程尚未实测。
+项目结构与手动检查方法见 [开发说明](docs/development.md)。自动检查结果可在 [GitHub Actions](https://github.com/Feo-cat/writing-tutor/actions/workflows/tests.yml) 查看。
 
 ## 许可证
 
 本项目采用 [MIT 许可证](LICENSE)，版权署名为 Feo-cat。随源码带入的第三方图标与模板保留各自的版权及许可声明，详见 [第三方声明](THIRD_PARTY_NOTICES.md)。
 
-进一步阅读：[Mac 验收](docs/mac-validation.md)、[目录与迁移记录](docs/migration.md)、[评测工具](docs/evaluation.md)、[第三方声明](THIRD_PARTY_NOTICES.md)。
+进一步阅读：[开发说明](docs/development.md)、[评测工具](docs/evaluation.md)、[第三方声明](THIRD_PARTY_NOTICES.md)。

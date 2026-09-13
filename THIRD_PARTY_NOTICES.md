@@ -2,7 +2,7 @@
 
 ## Vite 模板与图标
 
-`web/public/favicon.svg` 来自 Vite 官方的 [React TypeScript 模板](https://github.com/vitejs/vite/blob/main/packages/create-vite/template-react-ts/public/favicon.svg)。2026-09-13 核对时，本项目图标与上游文件的 SHA-256 一致：`61bc9a161de58248288e6905425d7180f0624c2865007b97d763fdac12043a66`。
+`web/public/favicon.svg` 来自 Vite 官方的 [React TypeScript 模板](https://github.com/vitejs/vite/blob/main/packages/create-vite/template-react-ts/public/favicon.svg)。
 
 图标及沿用的 Vite 模板部分适用上游 [MIT 许可证](https://github.com/vitejs/vite/blob/main/LICENSE)，原始声明保留如下；这不是对本项目其余内容的许可证声明。
 

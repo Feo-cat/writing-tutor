@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run on the test machine. Model/search dependencies are replaced inside Python tests.
+# Python regression checks and frontend lint/build; model and search calls use test doubles.
 set -euo pipefail
 cd -- "$(dirname "${BASH_SOURCE[0]}")"
 uv run --locked python _test_hardening.py

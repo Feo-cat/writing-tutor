@@ -494,7 +494,7 @@ check("H10：主集所有可判定题都有一手来源，金标准能人工复�
       all(c.get("source") for c in cases["cases"] if c["label"] != "unverifiable"))
 check("H11：主集所有 unverifiable 题都带 as_of，未来重跑时知道它冻结在哪一天",
       all(c.get("as_of") for c in cases["cases"] if c["label"] == "unverifiable"))
-check("H12：公开 sample 只保留 dev 冒烟题，不泄露 held-out test",
+check("H12：随项目提供的 sample 全部属于 dev 集",
       all(c["split"] == "dev" for c in allc))
 check("H13：公共稳定 / 实时 Web / 证据不足 / 项目素材四种证据来源都已落到 schema",
       {c["evidence_mode"] for c in allc}
@@ -513,34 +513,26 @@ with open(ev.MANIFEST_PATH, encoding="utf-8") as f:
     manifest = json.load(f)
 with open(ev.PUBLIC_CASES_PATH, "rb") as f:
     public_hash = hashlib.sha256(f.read()).hexdigest()
-check("H14c：manifest 公开了完整集规模与公开 sample 指纹，但不泄露全量题面",
-      manifest["full_dataset"]["visibility"] == "local_only"
-      and manifest["full_dataset"]["total"] == 120
-      and manifest["public_sample"]["total"] == 12
-      and manifest["public_sample"]["sha256"] == public_hash)
-
-full_ok = True
-if os.path.exists(ev.LOCAL_CASES_PATH):
-    with open(ev.LOCAL_CASES_PATH, encoding="utf-8") as f:
-        full = json.load(f)
-    with open(ev.LOCAL_CASES_PATH, "rb") as f:
-        full_hash = hashlib.sha256(f.read()).hexdigest()
-    fullc = full["cases"] + full["cases_material"]
-    expected_packs = manifest["full_dataset"]["material_packs"]
-    full_ok = (
-        es.validate_eval_data(full) == []
-        and full_hash == manifest["full_dataset"]["sha256"]
-        and balanced(full["cases"], 60, 20)
-        and balanced(full["cases_material"], 60, 20)
-        and all(sum(c["split"] == split for c in suite) == 30
-                for suite in (full["cases"], full["cases_material"])
-                for split in ("dev", "test"))
-        and all(sum(c.get("material_id") == mid for c in full["cases_material"]) == count
-                for mid, count in expected_packs.items())
-        and len(fullc) == manifest["full_dataset"]["total"]
-    )
-check("H14d：本机完整集若存在，schema / 指纹 / 60×2 平衡 / dev-test 冻结全部一致",
-      full_ok)
+sample_manifest = manifest["public_sample"]
+check("H14c：manifest 的路径、版本、数量及指纹对应随项目提供的样例",
+      manifest["schema_version"] == cases["_schema_version"]
+      and sample_manifest["path"] == os.path.basename(ev.PUBLIC_CASES_PATH)
+      and sample_manifest["freeze_version"] == cases["_freeze_version"]
+      and sample_manifest["total"] == len(allc)
+      and sample_manifest["sha256"] == public_hash)
+check("H14d：manifest 的用例分布、标签分布和素材引用数量与文件一致",
+      sample_manifest["suites"] == {
+          "public_knowledge": len(cases["cases"]),
+          "project_context": len(cases["cases_material"]),
+      }
+      and all(sample_manifest["labels_per_suite"] == {
+          label: sum(c["label"] == label for c in suite)
+          for label in ("correct", "incorrect", "unverifiable")
+      } for suite in (cases["cases"], cases["cases_material"]))
+      and sample_manifest["material_packs"] == {
+          mid: sum(c["material_id"] == mid for c in cases["cases_material"])
+          for mid in cases["materials"]
+      })
 
 broken_schema = json.loads(json.dumps(cases))
 del broken_schema["cases"][0]["difficulty"]
