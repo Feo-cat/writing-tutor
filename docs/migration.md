@@ -28,6 +28,7 @@
 | `.github/workflows/tests.yml` | GitHub 自动运行 Python 检查及前端 lint/build；纯 Markdown 或 docs 变更的 push 按现有规则跳过 |
 | `README.md`、`AGENTS.md`、`docs/` | 使用说明、开发约定、迁移与评测记录，以及 Mac 验收说明 |
 | `THIRD_PARTY_NOTICES.md` | 随源码带入的第三方图标、模板来源与原始许可声明 |
+| `LICENSE` | 本项目的 MIT 许可证，规定代码的使用、修改及分发条件 |
 
 ## 本次整理
 
@@ -70,15 +71,16 @@
 | 真实 DeepSeek 调用 | 使用 `deepseek-v4-pro`；此前反馈建连等待设为 20 秒后成功生成大纲 |
 | Mac 完整 Web 流程 | 2026-09-13，以“世界模型”为选题，按集中验收安排操作后反馈全流程正常。记录为维护者报告通过，覆盖教学、编辑、终审、保存、下载及重启后的档案读取；未收集私人正文或逐项操作日志 |
 | 私人文件隔离 | 本次反馈 `git status --short --branch` 仅显示 `## main...origin/main`；忽略检查返回 `.env` 和 `local_artifacts/blogs/`，与预期一致 |
-| 本轮受测版本与自动检查 | Mac 的实际 `git rev-parse HEAD` 和本轮 `Regression checks and frontend build completed.` 完成记录待补充；开发机的 `13ac360` 不作为 Mac 受测版本证明 |
+| Mac 版本记录 | 事后报告的 `git rev-parse HEAD` 为 `13ac360e390cd4d227980089e4f6cec3c5b0c130`。维护者不确定测试后是否拉取过代码，因此不能精确认定它就是受测提交。已核对 `bb9c3e1` 至该提交只有文档变更 |
+| 本轮 Mac 自动检查 | 维护者不确定是否看到 `Regression checks and frontend build completed.`，记录为未确认；不将此前的 Mac 检查或 GitHub CI 冒充本轮 Mac 检查通过 |
 | 其他平台及模式 | Windows/Linux 完整使用流程尚未实测；本轮学习模式结果不扩展为项目复盘模式或其他服务商均已验收 |
 
 本轮属于文件与文档的静态核对，没有在 Windows 运行应用、测试或真实模型。以上检查不构成对所有敏感信息或运行问题的绝对保证。
 
-## 发布前剩余事项
+## 发布准备
 
-补充上述 Mac 受测提交与自动检查记录，沿用已反馈的真实流程结果，不要求重新生成文章。后续涉及主流程的成批修改再按 [Mac 集中验收清单](mac-validation.md) 验证，不要求每个文档补丁都重新安装或写作。
+上述 Mac 反馈已归档，保留版本和自动检查记录的不确定性，不要求为此重新生成文章。后续涉及主流程的成批修改再按 [Mac 集中验收清单](mac-validation.md) 验证，在开始测试前记录提交号并保留自动检查结果。
 
 页面资源核对已完成：钢笔插画的来源由作者确认；2026-09-13 将 `web/public/favicon.svg` 与 Vite 官方模板比对，文件内容和 SHA-256 一致，已在 [第三方声明](../THIRD_PARTY_NOTICES.md) 保留来源及 MIT 许可文本。本批不增加展示截图。
 
-项目自身的许可证仍待作者选择。仓库准备期间保持私密，补齐记录与许可后，由维护者操作 GitHub 可见性；文件核对或自动检查通过不代表已经正式公开。
+作者已选择 [MIT 许可证](../LICENSE)，版权署名为 Feo-cat。项目许可和页面资源声明均已补齐；仓库可见性由维护者自行操作，文件检查与提交推送不自动将仓库设为公开。
